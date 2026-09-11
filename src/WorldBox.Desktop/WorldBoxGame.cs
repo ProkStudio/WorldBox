@@ -374,6 +374,9 @@ public sealed class WorldBoxGame : Game
             CursorInside = inside,
             WorldWidth = _world.Width,
             WorldHeight = _world.Height,
+            People = _people.Count,
+            Births = _populationSystem.LastBirths,
+            Deaths = _populationSystem.LastDeaths,
         };
 
         int viewportWidth = GraphicsDevice.Viewport.Width;

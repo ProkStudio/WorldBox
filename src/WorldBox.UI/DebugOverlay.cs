@@ -17,6 +17,7 @@ public sealed class DebugOverlay
     private static readonly Color TextColor = new Color(232, 232, 232);
     private static readonly Color AccentColor = new Color(94, 159, 232);
     private static readonly Color WarningColor = new Color(233, 115, 102);
+    private static readonly Color PeopleColor = new Color(246, 214, 160);
 
     private readonly TextBuilder _line = new TextBuilder(256);
 
@@ -43,7 +44,7 @@ public sealed class DebugOverlay
     {
         int scale = Math.Max(1, Scale);
         int step = font.LineHeight * scale;
-        int lines = info.IsBehind ? 6 : 5;
+        int lines = info.IsBehind ? 7 : 6;
         var panel = new Rectangle(12, 12, 560, (step * lines) + (10 * scale));
         primitives.FillRect(batch, panel, PanelColor);
         primitives.FrameRect(batch, panel, BorderColor);
@@ -68,6 +69,13 @@ public sealed class DebugOverlay
         _line.Clear()
             .Append(Strings.Get("hud.year")).Append(' ').AppendYear(info.Year);
         font.Draw(batch, _line.Span, new Vector2(x, y), TextColor, scale);
+        y += step;
+
+        _line.Clear()
+            .Append(Strings.Get("hud.people")).Append(' ').AppendGrouped(info.People)
+            .Append("   ").Append(Strings.Get("hud.births")).Append(" +").Append(info.Births)
+            .Append("   ").Append(Strings.Get("hud.deaths")).Append(" -").Append(info.Deaths);
+        font.Draw(batch, _line.Span, new Vector2(x, y), PeopleColor, scale);
         y += step;
 
         _line.Clear()

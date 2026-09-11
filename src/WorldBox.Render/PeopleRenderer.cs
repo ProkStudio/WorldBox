@@ -5,14 +5,15 @@ using WorldBox.Core.People;
 namespace WorldBox.Render;
 
 /// <summary>
-/// Жители на карте. Пока это точки: цвет говорит о голоде, размер — о зуме.
-/// На близком зуме под точкой рисуется тёмная подложка, иначе человечки теряются на траве.
-/// Издали люди вообще не рисуются: там будет тепловая карта плотности и границы государств.
-/// Спрайты человечков с анимацией ходьбы появятся когда у людей появятся занятия и племена.
+/// Жители на карте. Близко это отдельные точки: цвет говорит о голоде, под точкой тёмная
+/// подложка, иначе человечки теряются на траве. Издали отдельные точки сливаются в кашу,
+/// поэтому там рисуется полупрозрачное свечение: где людей больше, там ярче — видно, где
+/// заселена земля, без пересчёта отдельной тепловой карты.
+/// Спрайты человечков с анимацией ходьбы появятся вместе с занятиями и племенами.
 /// </summary>
 public sealed class PeopleRenderer
 {
-    /// <summary>Дальше этого зума точки сливаются в кашу и только едят кадр.</summary>
+    /// <summary>Ниже этого зума точки сливаются, поэтому включается свечение плотности.</summary>
     public const float MinZoom = 3f;
 
     /// <summary>С этого зума включается подложка под точкой.</summary>
@@ -21,6 +22,7 @@ public sealed class PeopleRenderer
     private static readonly Color Healthy = new Color(246, 226, 186);
     private static readonly Color Starving = new Color(206, 92, 66);
     private static readonly Color Shadow = new Color(8, 9, 12) * 0.7f;
+    private static readonly Color Crowd = new Color(255, 198, 128) * 0.24f;
 
     /// <summary>Сколько точек ушло в последний кадр. Нужно для замеров.</summary>
     public int DrawnPeople { get; private set; }
@@ -35,12 +37,40 @@ public sealed class PeopleRenderer
         DrawnPeople = 0;
 
         float zoom = camera.Zoom;
+        camera.VisibleTiles(out int minX, out int minY, out int maxX, out int maxY, 1);
+
+        Texture2D pixel = primitives.Pixel;
+        int high = people.HighWater;
+        int drawn = 0;
+
         if (zoom < MinZoom)
         {
+            // Свечение: точки одного тайла складываются друг на друга и дают яркое пятно.
+            float glowSize = MathF.Max(1f, 2.2f / zoom);
+            var glowScale = new Vector2(glowSize, glowSize);
+
+            for (int i = 0; i < high; i++)
+            {
+                if (!people.Alive[i])
+                {
+                    continue;
+                }
+
+                int gx = people.X[i];
+                int gy = people.Y[i];
+
+                if (gx < minX || gx > maxX || gy < minY || gy > maxY)
+                {
+                    continue;
+                }
+
+                batch.Draw(pixel, new Vector2(gx, gy), null, Crowd, 0f, Vector2.Zero, glowScale, SpriteEffects.None, 0f);
+                drawn++;
+            }
+
+            DrawnPeople = drawn;
             return;
         }
-
-        camera.VisibleTiles(out int minX, out int minY, out int maxX, out int maxY, 1);
 
         // Точка не должна становиться меньше полутора пикселей экрана, иначе люди пропадают.
         float size = MathF.Max(0.34f, 1.6f / zoom);
@@ -49,10 +79,6 @@ public sealed class PeopleRenderer
 
         var scale = new Vector2(size, size);
         var shadowScale = new Vector2(size + (shadowPad * 2f), size + (shadowPad * 2f));
-        Texture2D pixel = primitives.Pixel;
-
-        int high = people.HighWater;
-        int drawn = 0;
 
         for (int i = 0; i < high; i++)
         {

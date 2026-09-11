@@ -20,4 +20,7 @@ public struct OverlayInfo
     public bool CursorInside;
     public int WorldWidth;
     public int WorldHeight;
+    public int People;
+    public int Births;
+    public int Deaths;
 }
