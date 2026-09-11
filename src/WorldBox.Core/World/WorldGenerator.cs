@@ -13,6 +13,9 @@ public static class WorldGenerator
     /// </summary>
     private const float PolarEdge = 0.82f;
 
+    /// <summary>Сторона области, по которым раздаётся доля месторождений: руда есть в каждом краю мира.</summary>
+    private const int Region = 64;
+
     private static readonly int[] NeighborX = { 1, 1, 0, -1, -1, -1, 0, 1 };
     private static readonly int[] NeighborY = { 0, 1, 1, 1, 0, -1, -1, -1 };
 
@@ -655,8 +658,11 @@ public static class WorldGenerator
     }
 
     /// <summary>
-    /// Кладёт один вид руды: собирает свободные тайлы подходящей местности, считает
-    /// по ним шум и отдаёт руде верхушку рейтинга — столько, сколько просит доля суши.
+    /// Кладёт один вид руды. Доля раздаётся не на всю карту сразу, а по областям
+    /// Region на Region, и внутри области руда садится туда, где выше шум.
+    /// Без областей верхушка шума собирала редкую руду в одно-два пятна на весь мир:
+    /// нефть лежала в глуши, ни одного тайла во владениях, и мир вставал на Индустрии.
+    /// Остаток от деления переносится в следующую область, поэтому итог равен доле.
     /// </summary>
     private static void Sprinkle(
         WorldMap map,
@@ -670,48 +676,86 @@ public static class WorldGenerator
         float frequency)
     {
         var noise = new Noise(rng.NextInt(int.MaxValue));
-        int count = 0;
 
-        for (int y = 0; y < map.Height; y++)
+        int total = 0;
+        for (int i = 0; i < map.TileCount; i++)
         {
-            for (int x = 0; x < map.Width; x++)
+            var free = (Biome)map.BiomeAt[i];
+            if (map.ResourceAt[i] == (byte)ResourceKind.None
+                && Biomes.IsLand(free)
+                && Fits(kind, free, map.Elevation[i] - map.SeaLevel))
             {
-                int i = map.Index(x, y);
-                if (map.ResourceAt[i] != (byte)ResourceKind.None)
-                {
-                    continue;
-                }
-
-                var biome = (Biome)map.BiomeAt[i];
-                if (!Biomes.IsLand(biome) || !Fits(kind, biome, map.Elevation[i] - map.SeaLevel))
-                {
-                    continue;
-                }
-
-                tiles[count] = i;
-                scores[count] = noise.Fbm(x * frequency, y * frequency, 3);
-                count++;
+                total++;
             }
         }
 
-        if (count == 0)
+        if (total == 0)
         {
             return;
         }
 
         int target = (int)(land * Math.Clamp(share, 0f, 0.5f));
-        target = Math.Clamp(target, Math.Min(minimum, count), count);
+        target = Math.Clamp(target, Math.Min(minimum, total), total);
         if (target == 0)
         {
             return;
         }
 
-        // Сортировка по возрастанию шума: самые рудные тайлы оказываются в хвосте.
-        Array.Sort(scores, tiles, 0, count);
+        float ratio = target / (float)total;
+        float carry = 0f;
 
-        for (int n = 0; n < target; n++)
+        for (int blockY = 0; blockY < map.Height; blockY += Region)
         {
-            map.ResourceAt[tiles[count - 1 - n]] = (byte)kind;
+            for (int blockX = 0; blockX < map.Width; blockX += Region)
+            {
+                int endY = Math.Min(map.Height, blockY + Region);
+                int endX = Math.Min(map.Width, blockX + Region);
+                int count = 0;
+
+                for (int y = blockY; y < endY; y++)
+                {
+                    for (int x = blockX; x < endX; x++)
+                    {
+                        int i = map.Index(x, y);
+                        if (map.ResourceAt[i] != (byte)ResourceKind.None)
+                        {
+                            continue;
+                        }
+
+                        var biome = (Biome)map.BiomeAt[i];
+                        if (!Biomes.IsLand(biome) || !Fits(kind, biome, map.Elevation[i] - map.SeaLevel))
+                        {
+                            continue;
+                        }
+
+                        tiles[count] = i;
+                        scores[count] = noise.Fbm(x * frequency, y * frequency, 3);
+                        count++;
+                    }
+                }
+
+                if (count == 0)
+                {
+                    continue;
+                }
+
+                carry += count * ratio;
+                int take = Math.Min((int)carry, count);
+                if (take <= 0)
+                {
+                    continue;
+                }
+
+                carry -= take;
+
+                // Сортировка по возрастанию шума: самые рудные тайлы оказываются в хвосте.
+                Array.Sort(scores, tiles, 0, count);
+
+                for (int n = 0; n < take; n++)
+                {
+                    map.ResourceAt[tiles[count - 1 - n]] = (byte)kind;
+                }
+            }
         }
     }
 
