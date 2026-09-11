@@ -23,4 +23,9 @@ public struct OverlayInfo
     public int People;
     public int Births;
     public int Deaths;
+    public int Tribes;
+    public int Settlements;
+
+    /// <summary>Имя самого многолюдного народа. Ссылка на готовую строку, новых строк за кадр нет.</summary>
+    public string? LargestTribe;
 }

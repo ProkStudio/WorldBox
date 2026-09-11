@@ -18,6 +18,7 @@ public sealed class DebugOverlay
     private static readonly Color AccentColor = new Color(94, 159, 232);
     private static readonly Color WarningColor = new Color(233, 115, 102);
     private static readonly Color PeopleColor = new Color(246, 214, 160);
+    private static readonly Color TribesColor = new Color(158, 204, 172);
 
     private readonly TextBuilder _line = new TextBuilder(256);
 
@@ -44,8 +45,8 @@ public sealed class DebugOverlay
     {
         int scale = Math.Max(1, Scale);
         int step = font.LineHeight * scale;
-        int lines = info.IsBehind ? 7 : 6;
-        var panel = new Rectangle(12, 12, 560, (step * lines) + (10 * scale));
+        int lines = info.IsBehind ? 8 : 7;
+        var panel = new Rectangle(12, 12, 620, (step * lines) + (10 * scale));
         primitives.FillRect(batch, panel, PanelColor);
         primitives.FrameRect(batch, panel, BorderColor);
 
@@ -76,6 +77,18 @@ public sealed class DebugOverlay
             .Append("   ").Append(Strings.Get("hud.births")).Append(" +").Append(info.Births)
             .Append("   ").Append(Strings.Get("hud.deaths")).Append(" -").Append(info.Deaths);
         font.Draw(batch, _line.Span, new Vector2(x, y), PeopleColor, scale);
+        y += step;
+
+        string largest = info.LargestTribe ?? string.Empty;
+        _line.Clear()
+            .Append(Strings.Get("hud.tribes")).Append(' ').Append(info.Tribes)
+            .Append("   ").Append(Strings.Get("hud.settlements")).Append(' ').Append(info.Settlements);
+        if (largest.Length > 0)
+        {
+            _line.Append("   ").Append(Strings.Get("hud.largest")).Append(' ').Append(largest);
+        }
+
+        font.Draw(batch, _line.Span, new Vector2(x, y), TribesColor, scale);
         y += step;
 
         _line.Clear()
