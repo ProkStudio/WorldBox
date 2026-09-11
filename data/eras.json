@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "comment": "Таблица эпох. Правится без кода. requires.resources — нужен доступ через свои месторождения или торговлю.",
+  "version": 2,
+  "comment": "Таблица эпох. Правится без кода. requires.resources — нужен доступ через свои месторождения или через соседа.",
   "eras": [
     {
       "id": "paleolithic",
@@ -107,16 +107,38 @@
     }
   ],
   "diffusion": {
-    "comment": "Шанс за тик перенять технологию у соседа, который её уже имеет",
+    "comment": "Шанс за тик перенять эпоху у соседа, который её уже прошёл",
     "tradePartner": 0.02,
     "borderNeighbor": 0.008,
     "conquered": 0.05,
     "isolated": 0.0
   },
   "collapse": {
-    "comment": "При падении стабильности ниже порога государство теряет верхнюю эпоху",
+    "comment": "Если население упало ниже popShareToHold от порога своей эпохи, народ теряет erasLost эпох и darkAgeYears лет не развивается",
     "stabilityThreshold": 0.15,
     "erasLost": 1,
-    "darkAgeYears": 150
+    "darkAgeYears": 150,
+    "popShareToHold": 0.45
+  },
+  "population": {
+    "comment": "Один человечек на карте изображает столько людей. С каждой эпохой один работник кормит больше народу, поэтому множитель растёт",
+    "perAgent": 25,
+    "perAgentPerEra": 1.7
+  },
+  "research": {
+    "comment": "За тик народ копит одно очко знания плюс бонусы. baseCost — цена первого шага, costPerEra добавляется за каждую следующую эпоху",
+    "baseCost": 9000,
+    "costPerEra": 7000,
+    "settlementBonus": 0.09,
+    "neighborBonus": 0.35,
+    "isolatedPenalty": 0.75
+  },
+  "geo": {
+    "comment": "Сколько своих тайлов нужно, чтобы земля считалась плодородной, речной, морской или горной",
+    "fertileValue": 0.55,
+    "fertileTiles": 12,
+    "riverTiles": 3,
+    "coastTiles": 4,
+    "mountainTiles": 3
   }
 }
