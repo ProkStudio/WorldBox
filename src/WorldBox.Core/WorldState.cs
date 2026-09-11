@@ -1,10 +1,10 @@
 using WorldBox.Core.Diagnostics;
+using WorldBox.Core.World;
 
 namespace WorldBox.Core;
 
 /// <summary>
-/// Состояние мира. На срезе S0 здесь только размер, сид, счётчик тиков и год.
-/// Срез S1 добавит сюда слои карты массивами примитивов (float[] elevation и так далее).
+/// Состояние мира: размер, сид, счётчик тиков, год и слои карты.
 /// Ссылок на графику здесь нет и не будет.
 /// </summary>
 public sealed class WorldState
@@ -35,6 +35,9 @@ public sealed class WorldState
 
     public Rng Rng { get; }
 
+    /// <summary>Слои карты: высота, влага, температура, биомы, ресурсы. Заполняет генератор на старте.</summary>
+    public WorldMap? Map { get; private set; }
+
     /// <summary>Сколько тиков прошло с начала партии. Двигается только через SimulationLoop.</summary>
     public long Tick { get; internal set; }
 
@@ -49,6 +52,18 @@ public sealed class WorldState
     public int Index(int x, int y) => (y * Width) + x;
 
     public bool InBounds(int x, int y) => (uint)x < (uint)Width && (uint)y < (uint)Height;
+
+    /// <summary>Привязать сгенерированную карту. Размер карты должен совпадать с размером мира.</summary>
+    public void SetMap(WorldMap map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        if (map.Width != Width || map.Height != Height)
+        {
+            throw new ArgumentException("Размер карты не совпадает с размером мира.", nameof(map));
+        }
+
+        Map = map;
+    }
 
     /// <summary>Грубая контрольная сумма состояния. Используется тестом детерминизма.</summary>
     public ulong Checksum()
@@ -65,6 +80,11 @@ public sealed class WorldState
             for (int i = 0; i < state.Length; i++)
             {
                 hash = Mix(hash, state[i]);
+            }
+
+            if (Map != null)
+            {
+                hash = Mix(hash, Map.Checksum());
             }
 
             return hash;
