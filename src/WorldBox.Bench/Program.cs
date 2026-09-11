@@ -36,7 +36,8 @@ for (int i = 0; i < args.Length - 1; i++)
             seed = value;
             break;
         case "--tribes":
-            tribeCount = Math.Clamp(value, 1, 60);
+            // Ноль — это пустой мир без народов и людей: базовая строка S0 в docs/PERF.md.
+            tribeCount = Math.Clamp(value, 0, 60);
             break;
         case "--people":
             startPeople = Math.Clamp(value, tribeCount, Population.DefaultCapacity);
@@ -62,7 +63,11 @@ var tech = new TribeTech(tribes.Capacity);
 EraTable? table = EraTable.Load(out string eraError);
 EconomyTable? economy = EconomyTable.Load(out string economyError);
 
-TribeSeeder.Seed(world, people, tribes, settlements, territory, tribeCount, Math.Max(1, startPeople / tribeCount));
+// С нулём народов никого не селим: мир остаётся пустым, и видна цена самого цикла.
+if (tribeCount > 0)
+{
+    TribeSeeder.Seed(world, people, tribes, settlements, territory, tribeCount, Math.Max(1, startPeople / tribeCount));
+}
 
 var populationSystem = new PopulationSystem(people, null, tech);
 var settlementSystem = new SettlementSystem(people, tribes, settlements, territory);
