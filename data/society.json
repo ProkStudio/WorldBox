@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "religion": {
+    "maxReligions": 48,
+    "minPeople": 30,
+    "minEra": 1,
+    "youngRuns": 12,
+    "birthChancePerRun": 0.035,
+    "crisisBonus": 0.08,
+    "neighbourSpreadChance": 0.06,
+    "tradeSpreadChance": 0.09,
+    "conquestSpreadChance": 0.14,
+    "schismMinFollowers": 400,
+    "schismChancePerRun": 0.02,
+    "schismUnrest": 0.2,
+    "foreignFaithUnrest": 0.03
+  },
+  "culture": {
+    "maxCultures": 32,
+    "assimilationChance": 0.05,
+    "assimilationPerEra": 0.006,
+    "foreignUnrest": 0.035,
+    "absorbShare": 0.25,
+    "languages": 6
+  },
+  "ideology": {
+    "changeRuns": 10,
+    "switchChance": 0.5,
+    "forms": [
+      { "id": "tribe", "minEra": 0, "maxEra": 2, "stability": 0.10, "research": 0.00, "aggression": 0.25, "taxes": 0.30 },
+      { "id": "chiefdom", "minEra": 1, "maxEra": 3, "stability": 0.12, "research": 0.02, "aggression": 0.35, "taxes": 0.40 },
+      { "id": "monarchy", "minEra": 2, "maxEra": 7, "stability": 0.15, "research": 0.04, "aggression": 0.40, "taxes": 0.50 },
+      { "id": "theocracy", "minEra": 3, "maxEra": 7, "stability": 0.18, "research": 0.02, "aggression": 0.45, "taxes": 0.55 },
+      { "id": "republic", "minEra": 4, "maxEra": 8, "stability": 0.14, "research": 0.10, "aggression": 0.30, "taxes": 0.45 },
+      { "id": "empire", "minEra": 4, "maxEra": 9, "stability": 0.10, "research": 0.06, "aggression": 0.60, "taxes": 0.65 },
+      { "id": "nation", "minEra": 7, "maxEra": 10, "stability": 0.16, "research": 0.12, "aggression": 0.45, "taxes": 0.55 },
+      { "id": "democracy", "minEra": 8, "maxEra": 10, "stability": 0.20, "research": 0.16, "aggression": 0.25, "taxes": 0.50 },
+      { "id": "totalitarian", "minEra": 8, "maxEra": 10, "stability": 0.08, "research": 0.12, "aggression": 0.70, "taxes": 0.75 },
+      { "id": "technocracy", "minEra": 10, "maxEra": 10, "stability": 0.22, "research": 0.20, "aggression": 0.35, "taxes": 0.60 }
+    ]
+  },
+  "stability": {
+    "base": 0.3,
+    "hungerWeight": 0.3,
+    "unityWeight": 0.25,
+    "faithWeight": 0.2,
+    "eraFitWeight": 0.2,
+    "warWeight": 0.15,
+    "unrestWeight": 0.35,
+    "unrestPerPoint": 0.12,
+    "collapseThreshold": 0.3,
+    "collapseRuns": 6,
+    "collapseUnrest": 0.5
+  }
+}

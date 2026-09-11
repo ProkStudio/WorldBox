@@ -10,6 +10,7 @@ using WorldBox.Core.Eras;
 using WorldBox.Core.People;
 using WorldBox.Core.Roads;
 using WorldBox.Core.Simulation;
+using WorldBox.Core.Society;
 using WorldBox.Core.Time;
 using WorldBox.Core.Tribes;
 using WorldBox.Core.War;
@@ -56,6 +57,7 @@ public sealed class WorldBoxGame : Game
     private readonly TribePanel _tribePanel = new TribePanel();
     private readonly MarketPanel _marketPanel = new MarketPanel();
     private readonly WarPanel _warPanel = new WarPanel();
+    private readonly SocietyPanel _societyPanel = new SocietyPanel();
     private readonly PeopleRenderer _peopleRenderer = new PeopleRenderer();
     private readonly TradeRenderer _tradeRenderer = new TradeRenderer { Visible = false };
     private readonly ArmyRenderer _armyRenderer = new ArmyRenderer();
@@ -82,6 +84,12 @@ public sealed class WorldBoxGame : Game
     /// <summary>Почему таблица войны не прочиталась. Пустая строка, если всё хорошо.</summary>
     private readonly string _warError;
 
+    /// <summary>Таблица общества из data/society.json. Читается один раз на запуск игры.</summary>
+    private readonly SocietyTable? _societyTable;
+
+    /// <summary>Почему таблица общества не прочиталась. Пустая строка, если всё хорошо.</summary>
+    private readonly string _societyError;
+
     private WorldState _world = null!;
     private SimulationLoop _loop = null!;
     private WorldMap _map = null!;
@@ -102,6 +110,10 @@ public sealed class WorldBoxGame : Game
     private Diplomacy _diplomacy = null!;
     private ArmyStore? _armies;
     private WarSystem? _warSystem;
+    private SocietyState? _societyState;
+    private ReligionStore? _religions;
+    private CultureStore? _cultures;
+    private SocietySystem? _society;
     private SpriteBatch _batch = null!;
     private Primitives _primitives = null!;
     private PixelFont _font = null!;
@@ -113,6 +125,7 @@ public sealed class WorldBoxGame : Game
     private TileSpriteRenderer? _sprites;
     private DecorRenderer? _decor;
     private TerritoryRenderer? _borders;
+    private SocietyRenderer? _societyOverlay;
     private RoadRenderer? _roadRenderer;
     private Minimap? _minimap;
 
@@ -160,6 +173,9 @@ public sealed class WorldBoxGame : Game
         _warTable = WarTable.Load(out string warError);
         _warError = warError;
 
+        _societyTable = SocietyTable.Load(out string societyError);
+        _societyError = societyError;
+
         GenerateWorld(seed);
     }
 
@@ -186,6 +202,12 @@ public sealed class WorldBoxGame : Game
         if (_warError.Length > 0)
         {
             Console.Error.WriteLine(_warError);
+        }
+
+        // Без таблицы общества не будет ни религий, ни культур, ни форм власти.
+        if (_societyError.Length > 0)
+        {
+            Console.Error.WriteLine(_societyError);
         }
 
         // Камера создаётся раньше подписки: событие смены размера трогает камеру.
@@ -215,6 +237,7 @@ public sealed class WorldBoxGame : Game
         _sprites?.Dispose();
         _decor?.Dispose();
         _borders?.Dispose();
+        _societyOverlay?.Dispose();
         _roadRenderer?.Dispose();
         _minimap?.Dispose();
         _decorAtlas.Dispose();
@@ -342,6 +365,21 @@ public sealed class WorldBoxGame : Game
         {
             // Окно войны: кто с кем воюет, сколько войск и что война сделала с картой.
             _warPanel.Visible = !_warPanel.Visible;
+        }
+
+        if (_input.WasPressed(Keys.K))
+        {
+            // Слой общества по кругу: религии, культуры, формы власти, выключено.
+            if (_societyOverlay != null)
+            {
+                _societyOverlay.Layer = SocietyLayers.Next(_societyOverlay.Layer);
+            }
+        }
+
+        if (_input.WasPressed(Keys.C))
+        {
+            // Окно общества: во что верит двор, какой народ главный и крепка ли власть.
+            _societyPanel.Visible = !_societyPanel.Visible;
         }
 
         if (_input.WasPressed(Keys.T))
@@ -639,6 +677,12 @@ public sealed class WorldBoxGame : Game
             _borders.Draw(_batch, _primitives, _camera, _territory, _tribes, _settlements);
         }
 
+        // Слой общества идёт сразу за границами: вера и культура — это про людей, а не про землю.
+        if (_societyOverlay != null && _societyState != null && _religions != null && _cultures != null)
+        {
+            _societyOverlay.Draw(_batch, _territory, _tribes, _settlements, _societyState, _religions, _cultures);
+        }
+
         // Дороги ложатся поверх границ: иначе полупрозрачная заливка державы гасит полотно.
         if (_roadsVisible && _roadRenderer != null)
         {
@@ -767,6 +811,22 @@ public sealed class WorldBoxGame : Game
             _settlements,
             _warSystem,
             _world.YearsPerTick,
+            viewportHeight,
+            _ui);
+
+        // Окно общества встаёт под окном войны: панели идут одной цепочкой сверху вниз.
+        _societyPanel.TopMargin = _warPanel.Bounds.Height > 0
+            ? _warPanel.Bounds.Bottom + PanelGap
+            : _warPanel.TopMargin;
+        _societyPanel.Draw(
+            _batch,
+            _font,
+            _primitives,
+            _tribes,
+            _society,
+            _societyState,
+            _religions,
+            _cultures,
             viewportHeight,
             _ui);
 
@@ -900,6 +960,31 @@ public sealed class WorldBoxGame : Game
             _warSystem = null;
         }
 
+        // Общество собирается после войны: ему нужны и границы, и города, и торговые пути.
+        if (_societyTable != null)
+        {
+            _religions = new ReligionStore(_societyTable.Religion.MaxReligions);
+            _cultures = new CultureStore(_societyTable.Culture.MaxCultures);
+            _societyState = new SocietyState(_tribes.Capacity, _settlements.Capacity);
+            _society = new SocietySystem(
+                _societyTable,
+                _tribes,
+                _settlements,
+                _societyState,
+                _religions,
+                _cultures,
+                _market,
+                _routes,
+                _diplomacy);
+        }
+        else
+        {
+            _religions = null;
+            _cultures = null;
+            _societyState = null;
+            _society = null;
+        }
+
         _loop = BuildLoop();
 
         _clock.Reset();
@@ -908,6 +993,7 @@ public sealed class WorldBoxGame : Game
         _simStats.Clear();
         _trafficSeconds = 0f;
         _borders?.Invalidate();
+        _societyOverlay?.Invalidate();
         _roadRenderer?.Invalidate();
     }
 
@@ -948,6 +1034,13 @@ public sealed class WorldBoxGame : Game
             .Append(", осад в кадре ").Append(_armyRenderer.DrawnSieges)
             .Append(", битв всего ").Append(_warSystem != null ? _warSystem.TotalBattles : 0)
             .Append(", городов взято ").AppendLine((_warSystem != null ? _warSystem.TotalCaptures : 0).ToString());
+        text.Append("общество: религий ").Append(_society != null ? _society.ReligionCount : 0)
+            .Append(", культур ").Append(_society != null ? _society.CultureCount : 0)
+            .Append(", расколов ").Append(_society != null ? _society.SchismCount : 0)
+            .Append(", обращений всего ").Append(_society != null ? _society.TotalConversions : 0)
+            .Append(", смут ").Append(_society != null ? _society.TotalCollapses : 0)
+            .Append(", стабильность ")
+            .AppendLine(((int)MathF.Round((_society != null ? _society.AverageStability : 0f) * 100f)).ToString());
         text.Append("слои: ближний план ").Append(OnOff(_detailTiles))
             .Append(", люди ").Append(OnOff(_peopleVisible))
             .Append(", декор ").Append(OnOff(_decorVisible))
@@ -1004,7 +1097,7 @@ public sealed class WorldBoxGame : Game
     /// </summary>
     private SimulationLoop BuildLoop()
     {
-        var systems = new List<ISimulationSystem>(8)
+        var systems = new List<ISimulationSystem>(9)
         {
             _populationSystem,
             _settlementSystem,
@@ -1028,6 +1121,12 @@ public sealed class WorldBoxGame : Game
             systems.Add(_warSystem);
         }
 
+        // Общество замыкает тик: оно смотрит на уже взятые города и добавляет им недовольство.
+        if (_society != null)
+        {
+            systems.Add(_society);
+        }
+
         return new SimulationLoop(_world, systems.ToArray());
     }
 
@@ -1049,6 +1148,12 @@ public sealed class WorldBoxGame : Game
 
         _borders?.Dispose();
         _borders = new TerritoryRenderer(GraphicsDevice, _map.Width, _map.Height);
+
+        // Выбранный слой общества переживает смену мира: иначе после N карта неожиданно гаснет.
+        SocietyLayer layer = _societyOverlay?.Layer ?? SocietyLayer.Off;
+        _societyOverlay?.Dispose();
+        _societyOverlay = new SocietyRenderer(GraphicsDevice, _map.Width, _map.Height);
+        _societyOverlay.Layer = layer;
 
         _roadRenderer?.Dispose();
         _roadRenderer = new RoadRenderer(GraphicsDevice, _map.Width, _map.Height);

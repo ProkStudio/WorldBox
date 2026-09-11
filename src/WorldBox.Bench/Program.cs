@@ -6,6 +6,7 @@ using WorldBox.Core.Eras;
 using WorldBox.Core.People;
 using WorldBox.Core.Roads;
 using WorldBox.Core.Simulation;
+using WorldBox.Core.Society;
 using WorldBox.Core.Tribes;
 using WorldBox.Core.War;
 using WorldBox.Core.World;
@@ -110,6 +111,29 @@ if (war != null)
     warSystem = new WarSystem(war, table, people, tribes, settlements, territory, armies, diplomacy, market);
 }
 
+// Общество замыкает тик: вера, культура и власть смотрят на готовые границы и города.
+SocietyTable? societyTable = SocietyTable.Load(out string societyError);
+ReligionStore? religions = null;
+CultureStore? cultures = null;
+SocietyState? societyState = null;
+SocietySystem? societySystem = null;
+if (societyTable != null)
+{
+    religions = new ReligionStore(societyTable.Religion.MaxReligions);
+    cultures = new CultureStore(societyTable.Culture.MaxCultures);
+    societyState = new SocietyState(tribes.Capacity, settlements.Capacity);
+    societySystem = new SocietySystem(
+        societyTable,
+        tribes,
+        settlements,
+        societyState,
+        religions,
+        cultures,
+        market,
+        routes,
+        diplomacy);
+}
+
 var systems = new List<ISimulationSystem> { populationSystem, settlementSystem, territorySystem, roadSystem };
 if (economySystem != null)
 {
@@ -124,6 +148,11 @@ if (eraSystem != null)
 if (warSystem != null)
 {
     systems.Add(warSystem);
+}
+
+if (societySystem != null)
+{
+    systems.Add(societySystem);
 }
 
 var loop = new SimulationLoop(world, systems.ToArray());
@@ -344,9 +373,87 @@ else
 }
 
 Console.WriteLine();
+
+if (societyTable != null && societySystem != null && religions != null && cultures != null && societyState != null)
+{
+    Console.WriteLine("Общество:");
+    Console.WriteLine(
+        "  религий: {0} из {1}, культур {2} из {3}, расколов {4}",
+        societySystem.ReligionCount,
+        religions.Capacity,
+        societySystem.CultureCount,
+        cultures.Capacity,
+        societySystem.SchismCount);
+    Console.WriteLine(
+        "  рождений вер: {0}, расколов всего {1}, живых расколов {2}",
+        societySystem.TotalBirths,
+        societySystem.TotalSchisms,
+        societySystem.SchismCount);
+    Console.WriteLine(
+        "  обращений всего: {0}, ассимиляций {1}, культур поглощено {2}",
+        societySystem.TotalConversions,
+        societySystem.TotalAssimilations,
+        societySystem.TotalAbsorbs);
+    Console.WriteLine(
+        "  смен власти: {0}, смут {1}, средняя стабильность {2:P0}",
+        societySystem.TotalIdeologyChanges,
+        societySystem.TotalCollapses,
+        societySystem.AverageStability);
+
+    short mainFaith = religions.Largest();
+    if (religions.IsAlive(mainFaith))
+    {
+        Console.WriteLine(
+            "  самая большая вера: {0}, последователей {1}, городов {2}",
+            religions.NameOf(mainFaith),
+            religions.Followers[mainFaith],
+            religions.Settlements[mainFaith]);
+    }
+
+    short mainCulture = cultures.Largest();
+    if (cultures.IsAlive(mainCulture))
+    {
+        Console.WriteLine(
+            "  самая большая культура: {0}, людей {1}, городов {2}",
+            cultures.NameOf(mainCulture),
+            cultures.People[mainCulture],
+            cultures.Settlements[mainCulture]);
+    }
+
+    // Формы власти живых народов: видно, доросли ли державы до республик и технократий.
+    Console.WriteLine("  власть живых народов:");
+    for (int form = 0; form < societyTable.FormCount; form++)
+    {
+        int holders = 0;
+        for (short t = 1; t < tribes.Capacity; t++)
+        {
+            if (tribes.Alive[t] && societyState.Ideology[t] == form)
+            {
+                holders++;
+            }
+        }
+
+        if (holders == 0)
+        {
+            continue;
+        }
+
+        Console.WriteLine("    {0}: {1} народов", societyTable.FormId[form], holders);
+    }
+
+    Console.WriteLine("  контрольная сумма религий: {0}", religions.Checksum());
+    Console.WriteLine("  контрольная сумма культур: {0}", cultures.Checksum());
+    Console.WriteLine("  контрольная сумма общества: {0}", societyState.Checksum());
+}
+else
+{
+    Console.WriteLine("Таблица общества не прочитана, общество в замер не вошло: {0}", societyError);
+}
+
+Console.WriteLine();
 Console.WriteLine("Строка для docs/PERF.md:");
 Console.WriteLine(
-    "| {0:yyyy-MM-dd} | S6 | {1}x{1}, {2} народов, {3} человек, {4} путей | {5:F4} | {6:F4} | — |",
+    "| {0:yyyy-MM-dd} | S7 | {1}x{1}, {2} народов, {3} человек, {4} путей | {5:F4} | {6:F4} | — |",
     DateTime.Now,
     size,
     tribeCount,
