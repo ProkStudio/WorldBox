@@ -1,3 +1,4 @@
+using System.Globalization;
 using WorldBox.Core;
 using WorldBox.Core.Economy;
 using WorldBox.Core.Eras;
@@ -135,6 +136,68 @@ public sealed class EconomyTests
             Assert.InRange(market.ResearchBonusOf(t), 0f, 0.75f);
             Assert.True(market.PartnerCount(t) >= 0);
         }
+    }
+
+    /// <summary>
+    /// Склад редкого сырья не должен стоять в нуле. Народу даётся большой лесной край
+    /// и всего двадцать урановых жил: добыча урана малая, но она есть, поэтому запас
+    /// обязан копиться. Проверка стоит именно так, потому что раньше спрос делился между
+    /// товарами поровну: уран получал столько же спроса, сколько повсеместный лес,
+    /// и склад съедался в том же прогоне, в котором наполнялся.
+    /// </summary>
+    [Fact]
+    public void RareResourceStockDoesNotStayEmpty()
+    {
+        EconomyTable? table = EconomyTable.Load(out string error);
+        Assert.True(table != null, "Таблица товаров не прочиталась: " + error);
+
+        int wood = table!.Find("wood");
+        int uranium = table.Find("uranium");
+        Assert.True(wood > 0 && uranium > 0, "В таблице нет дерева или урана.");
+
+        const int size = 64;
+        const int seed = 31337;
+        const int uraniumTiles = 20;
+        const int woodTiles = 600;
+        const int ownedTiles = 1200;
+
+        WorldMap map = WorldGenerator.Generate(size, size, seed);
+        var world = new WorldState(size, size, seed);
+        world.SetMap(map);
+
+        var tribes = new TribeStore();
+        var settlements = new SettlementStore();
+        var territory = new Territory(size, size, tribes.Capacity);
+
+        short tribe = tribes.Create("Проверка", 1, 0, 0);
+        tribes.Era[tribe] = (byte)table.MinEra[uranium];
+        tribes.People[tribe] = 4000;
+        tribes.Settlements[tribe] = 6;
+
+        for (int index = 0; index < ownedTiles; index++)
+        {
+            territory.Claim(index, tribe);
+            map.ResourceAt[index] = index < uraniumTiles
+                ? (byte)ResourceKind.Uranium
+                : index < uraniumTiles + woodTiles
+                    ? (byte)ResourceKind.Wood
+                    : (byte)ResourceKind.None;
+        }
+
+        var market = new TribeMarket(tribes.Capacity, table.Count);
+        var routes = new TradeNetwork(table.Trade.MaxRoutes);
+        var economy = new EconomySystem(table, tribes, settlements, territory, market, routes);
+        var loop = new SimulationLoop(world, economy);
+
+        loop.RunTicks(1000);
+
+        Assert.True(
+            market.StockOf(tribe, wood) > 1f,
+            "Лес не копится вовсе — дело не в редкости сырья.");
+        Assert.True(
+            market.StockOf(tribe, uranium) > 5f,
+            "Урановый склад пуст: добыча идёт, но спрос съедает её целиком. Запас: "
+                + market.StockOf(tribe, uranium).ToString("F2", CultureInfo.InvariantCulture));
     }
 
     /// <summary>Собирает маленький мир с хозяйством и прогоняет его заданное число тиков.</summary>

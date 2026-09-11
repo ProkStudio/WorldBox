@@ -287,7 +287,8 @@ public sealed class EconomyTable
         if (!TryReadBlock(root, "consumption", out JsonElement block)
             || !TryReadFloat(block, "foodPerPerson", out float foodPerPerson)
             || !TryReadFloat(block, "goodsPerPerson", out float goodsPerPerson)
-            || !TryReadFloat(block, "goodsPerSettlement", out float goodsPerSettlement))
+            || !TryReadFloat(block, "goodsPerSettlement", out float goodsPerSettlement)
+            || !TryReadFloat(block, "demandFloorTiles", out float demandFloorTiles))
         {
             error = "Раздел consumption в data/" + FileName + " отсутствует или заполнен не полностью.";
             return null;
@@ -299,8 +300,18 @@ public sealed class EconomyTable
             return null;
         }
 
+        if (demandFloorTiles < 0f)
+        {
+            error = "В разделе consumption demandFloorTiles не может быть отрицательным.";
+            return null;
+        }
+
         error = string.Empty;
-        return new EconomyConsumptionSettings(foodPerPerson, goodsPerPerson, goodsPerSettlement);
+        return new EconomyConsumptionSettings(
+            foodPerPerson,
+            goodsPerPerson,
+            goodsPerSettlement,
+            demandFloorTiles);
     }
 
     private static EconomyStorageSettings? ReadStorage(JsonElement root, out string error)

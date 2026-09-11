@@ -301,25 +301,33 @@ public sealed class EconomySystem : ISimulationSystem
                 deficit |= 1 << EconomyTable.Food;
             }
 
-            // Сколько товаров народ вообще умеет добывать в своей эпохе.
-            int kinds = 0;
+            // Спрос на сырьё взвешен по своей земле. Раньше он делился между товарами эпохи
+            // поровну, и урановая жила на четверти процента земли получала столько же спроса,
+            // сколько повсеместный лес: склад редкого сырья съедался в том же прогоне, в котором
+            // наполнялся, цена упиралась в потолок, а запас стоял в нуле. Добавка
+            // DemandFloorTiles оставляет небольшой спрос и на то, чего в земле нет.
+            float floor = consumption.DemandFloorTiles;
+            float weight = 0f;
             for (int good = 1; good < _goods; good++)
             {
                 if (_table.CanExtract(good, era))
                 {
-                    kinds++;
+                    weight += _resource[first + good] + floor;
                 }
             }
 
-            float perGood = kinds == 0
-                ? 0f
-                : ((_tribes.People[t] * consumption.GoodsPerPerson)
-                    + (_tribes.Settlements[t] * consumption.GoodsPerSettlement)) / kinds;
+            float goodsNeed = (_tribes.People[t] * consumption.GoodsPerPerson)
+                + (_tribes.Settlements[t] * consumption.GoodsPerSettlement);
 
             for (int good = 1; good < _goods; good++)
             {
                 int cell = first + good;
-                float need = _table.CanExtract(good, era) ? perGood : 0f;
+                float need = 0f;
+                if (weight > 0f && _table.CanExtract(good, era))
+                {
+                    need = goodsNeed * ((_resource[first + good] + floor) / weight);
+                }
+
                 _need[cell] = need;
 
                 float used = MathF.Min(_market.Stock[cell], need);

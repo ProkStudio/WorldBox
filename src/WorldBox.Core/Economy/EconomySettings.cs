@@ -20,10 +20,16 @@ public sealed record EconomyProductionSettings(
 /// <param name="FoodPerPerson">Еда на одного агента.</param>
 /// <param name="GoodsPerPerson">Прочие товары на одного агента.</param>
 /// <param name="GoodsPerSettlement">Прочие товары на одно поселение: стройка и ремонт.</param>
+/// <param name="DemandFloorTiles">
+/// Добавка к весу спроса, будто у народа есть столько тайлов товара.
+/// Спрос на сырьё делится по своей земле, и без этой добавки товар, которого в земле нет вовсе,
+/// вообще не покупался бы на рынке.
+/// </param>
 public sealed record EconomyConsumptionSettings(
     float FoodPerPerson,
     float GoodsPerPerson,
-    float GoodsPerSettlement);
+    float GoodsPerSettlement,
+    float DemandFloorTiles);
 
 /// <summary>Склады: сколько можно держать и сколько пропадает.</summary>
 /// <param name="PerTile">Вместимость на один тайл владений.</param>

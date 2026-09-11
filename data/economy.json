@@ -10,7 +10,8 @@
   "consumption": {
     "foodPerPerson": 0.05,
     "goodsPerPerson": 0.004,
-    "goodsPerSettlement": 0.04
+    "goodsPerSettlement": 0.04,
+    "demandFloorTiles": 4
   },
   "storage": {
     "perTile": 3,
