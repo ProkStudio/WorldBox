@@ -10,6 +10,7 @@ namespace WorldBox.Render;
 /// Так на экран уходит один прямоугольник вместо сотен тысяч, а пересборка идёт только когда
 /// владельцы действительно менялись, и не чаще раза в несколько кадров.
 /// Край владений рисуется ярче середины — получается чёткая политическая обводка.
+/// Значок поселения меняется с эпохой народа: хижина, стена, башня, дым, ночные огни.
 /// </summary>
 public sealed class TerritoryRenderer : IDisposable
 {
@@ -178,10 +179,86 @@ public sealed class TerritoryRenderer : IDisposable
             float outerSize = size + (outline * 2f);
             batch.Draw(pixel, outer, null, MarkerBase, 0f, Vector2.Zero, new Vector2(outerSize, outerSize), SpriteEffects.None, 0f);
             batch.Draw(pixel, inner, null, TribePalette.Of(tribes.ColorIndex[tribe]), 0f, Vector2.Zero, new Vector2(size, size), SpriteEffects.None, 0f);
+
+            // Эпоха видна без панелей: у бронзы появляется стена, у промышленности — дым.
+            DrawDecor(batch, pixel, EraStyle.DecorOf(tribes.Era[tribe]), x + 0.5f, y + 0.5f, size, outline);
             drawn++;
         }
 
         DrawnSettlements = drawn;
+    }
+
+    /// <summary>Украшения значка. Рисуются только для видимых поселений, поэтому стоят копейки.</summary>
+    private static void DrawDecor(
+        SpriteBatch batch,
+        Texture2D pixel,
+        SettlementDecor decor,
+        float centerX,
+        float centerY,
+        float size,
+        float outline)
+    {
+        if (decor == SettlementDecor.Hut)
+        {
+            return;
+        }
+
+        float ringSize = size + (outline * 4f);
+        float ringLeft = centerX - (ringSize * 0.5f);
+        float ringTop = centerY - (ringSize * 0.5f);
+        DrawRing(batch, pixel, ringLeft, ringTop, ringSize, outline, EraStyle.Wall);
+
+        if (decor == SettlementDecor.Walls)
+        {
+            return;
+        }
+
+        float tower = MathF.Max(outline, size * 0.42f);
+        DrawQuad(batch, pixel, centerX - (tower * 0.5f), ringTop - tower, tower, tower, EraStyle.Tower);
+
+        if (decor == SettlementDecor.Smoke)
+        {
+            float puff = MathF.Max(outline, size * 0.3f);
+            DrawQuad(batch, pixel, centerX - (puff * 1.7f), ringTop - tower - puff, puff, puff, EraStyle.Smoke);
+            DrawQuad(batch, pixel, centerX + (puff * 0.7f), ringTop - tower - (puff * 1.9f), puff, puff, EraStyle.Smoke);
+            return;
+        }
+
+        if (decor == SettlementDecor.Lights)
+        {
+            float dot = MathF.Max(outline, size * 0.22f);
+            DrawQuad(batch, pixel, ringLeft - dot, ringTop - dot, dot, dot, EraStyle.Light);
+            DrawQuad(batch, pixel, ringLeft + ringSize, ringTop - dot, dot, dot, EraStyle.Light);
+            DrawQuad(batch, pixel, ringLeft - dot, ringTop + ringSize, dot, dot, EraStyle.Light);
+            DrawQuad(batch, pixel, ringLeft + ringSize, ringTop + ringSize, dot, dot, EraStyle.Light);
+        }
+    }
+
+    private static void DrawRing(
+        SpriteBatch batch,
+        Texture2D pixel,
+        float left,
+        float top,
+        float size,
+        float thickness,
+        Color color)
+    {
+        DrawQuad(batch, pixel, left, top, size, thickness, color);
+        DrawQuad(batch, pixel, left, top + size - thickness, size, thickness, color);
+        DrawQuad(batch, pixel, left, top, thickness, size, color);
+        DrawQuad(batch, pixel, left + size - thickness, top, thickness, size, color);
+    }
+
+    private static void DrawQuad(
+        SpriteBatch batch,
+        Texture2D pixel,
+        float left,
+        float top,
+        float width,
+        float height,
+        Color color)
+    {
+        batch.Draw(pixel, new Vector2(left, top), null, color, 0f, Vector2.Zero, new Vector2(width, height), SpriteEffects.None, 0f);
     }
 
     public void Dispose()
