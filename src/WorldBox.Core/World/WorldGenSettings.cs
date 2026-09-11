@@ -36,6 +36,36 @@ public struct WorldGenSettings
     /// <summary>Какая доля суши становится вершинами (входит в MountainShare).</summary>
     public float PeakShare;
 
+    /// <summary>Какая доля суши укрыта лесом под вырубку.</summary>
+    public float WoodShare;
+
+    /// <summary>Какая доля суши даёт камень.</summary>
+    public float StoneShare;
+
+    /// <summary>Какая доля суши даёт медь.</summary>
+    public float CopperShare;
+
+    /// <summary>Какая доля суши даёт олово. Без него не выплавить бронзу.</summary>
+    public float TinShare;
+
+    /// <summary>Какая доля суши даёт железо.</summary>
+    public float IronShare;
+
+    /// <summary>Какая доля суши даёт уголь.</summary>
+    public float CoalShare;
+
+    /// <summary>Какая доля суши даёт селитру.</summary>
+    public float SaltpeterShare;
+
+    /// <summary>Какая доля суши даёт нефть.</summary>
+    public float OilShare;
+
+    /// <summary>Какая доля суши даёт уран.</summary>
+    public float UraniumShare;
+
+    /// <summary>Сколько тайлов руды кладём даже там, где подходящей местности почти нет.</summary>
+    public int MinDeposits;
+
     public static WorldGenSettings Default => new WorldGenSettings
     {
         LandFraction = 0.34f,
@@ -49,5 +79,15 @@ public struct WorldGenSettings
         DryBeltStrength = 0.55f,
         MountainShare = 0.14f,
         PeakShare = 0.035f,
+        WoodShare = 0.090f,
+        StoneShare = 0.045f,
+        CopperShare = 0.010f,
+        TinShare = 0.006f,
+        IronShare = 0.012f,
+        CoalShare = 0.008f,
+        SaltpeterShare = 0.005f,
+        OilShare = 0.006f,
+        UraniumShare = 0.003f,
+        MinDeposits = 20,
     };
 }

@@ -31,7 +31,7 @@ public static class WorldGenerator
         BuildRivers(map, settings);
         AssignBiomes(map, settings);
         BuildFertility(map);
-        PlaceResources(map, rng);
+        PlaceResources(map, rng, settings);
         map.Recount();
         return map;
     }
@@ -614,73 +614,128 @@ public static class WorldGenerator
         return false;
     }
 
-    private static void PlaceResources(WorldMap map, Rng rng)
+    /// <summary>
+    /// Раскладывает месторождения по доле суши, а не по абсолютному порогу шума.
+    /// Порог отдавал редкую руду на волю случая: на карте 256 на 256 олова выходило
+    /// семь тайлов, а урана ни одного, и все народы навсегда застревали перед бронзой.
+    /// Доля гарантирует руду на любом сиде, а рисунок пятен по-прежнему задаёт шум.
+    /// Идём от редкой руды к частой: редкая занимает подходящий тайл первой.
+    /// </summary>
+    private static void PlaceResources(WorldMap map, Rng rng, WorldGenSettings settings)
     {
-        var wood = new Noise(rng.NextInt(int.MaxValue));
-        var stone = new Noise(rng.NextInt(int.MaxValue));
-        var copper = new Noise(rng.NextInt(int.MaxValue));
-        var tin = new Noise(rng.NextInt(int.MaxValue));
-        var iron = new Noise(rng.NextInt(int.MaxValue));
-        var coal = new Noise(rng.NextInt(int.MaxValue));
-        var saltpeter = new Noise(rng.NextInt(int.MaxValue));
-        var oil = new Noise(rng.NextInt(int.MaxValue));
-        var uranium = new Noise(rng.NextInt(int.MaxValue));
+        int land = 0;
+        for (int i = 0; i < map.TileCount; i++)
+        {
+            map.ResourceAt[i] = (byte)ResourceKind.None;
+            if (Biomes.IsLand((Biome)map.BiomeAt[i]))
+            {
+                land++;
+            }
+        }
+
+        if (land == 0)
+        {
+            return;
+        }
+
+        // Генерация идёт один раз и вне тика, поэтому два буфера на всю сушу здесь уместны.
+        var tiles = new int[land];
+        var scores = new float[land];
+        int minimum = Math.Max(0, settings.MinDeposits);
+
+        Sprinkle(map, rng, tiles, scores, land, ResourceKind.Uranium, settings.UraniumShare, minimum, 0.05f);
+        Sprinkle(map, rng, tiles, scores, land, ResourceKind.Oil, settings.OilShare, minimum, 0.04f);
+        Sprinkle(map, rng, tiles, scores, land, ResourceKind.Tin, settings.TinShare, minimum, 0.06f);
+        Sprinkle(map, rng, tiles, scores, land, ResourceKind.Saltpeter, settings.SaltpeterShare, minimum, 0.05f);
+        Sprinkle(map, rng, tiles, scores, land, ResourceKind.Coal, settings.CoalShare, minimum, 0.045f);
+        Sprinkle(map, rng, tiles, scores, land, ResourceKind.Iron, settings.IronShare, minimum, 0.05f);
+        Sprinkle(map, rng, tiles, scores, land, ResourceKind.Copper, settings.CopperShare, minimum, 0.055f);
+        Sprinkle(map, rng, tiles, scores, land, ResourceKind.Stone, settings.StoneShare, minimum, 0.07f);
+        Sprinkle(map, rng, tiles, scores, land, ResourceKind.Wood, settings.WoodShare, minimum, 0.08f);
+    }
+
+    /// <summary>
+    /// Кладёт один вид руды: собирает свободные тайлы подходящей местности, считает
+    /// по ним шум и отдаёт руде верхушку рейтинга — столько, сколько просит доля суши.
+    /// </summary>
+    private static void Sprinkle(
+        WorldMap map,
+        Rng rng,
+        int[] tiles,
+        float[] scores,
+        int land,
+        ResourceKind kind,
+        float share,
+        int minimum,
+        float frequency)
+    {
+        var noise = new Noise(rng.NextInt(int.MaxValue));
+        int count = 0;
 
         for (int y = 0; y < map.Height; y++)
         {
             for (int x = 0; x < map.Width; x++)
             {
                 int i = map.Index(x, y);
+                if (map.ResourceAt[i] != (byte)ResourceKind.None)
+                {
+                    continue;
+                }
+
                 var biome = (Biome)map.BiomeAt[i];
-                float above = map.Elevation[i] - map.SeaLevel;
-                bool mountains = biome == Biome.Mountain || biome == Biome.Peak;
-                bool hills = above > 0.07f;
-                bool forest = biome == Biome.TemperateForest || biome == Biome.Taiga || biome == Biome.Rainforest;
-                bool dry = biome == Biome.Desert || biome == Biome.Savanna || biome == Biome.Steppe;
-                bool lowland = above < 0.06f && Biomes.IsLand(biome);
-
-                // От редких к частым: редкий ресурс не должен затираться частым.
-                ResourceKind kind = ResourceKind.None;
-                if ((mountains || dry) && uranium.Fbm(x * 0.05f, y * 0.05f, 3) > 0.885f)
+                if (!Biomes.IsLand(biome) || !Fits(kind, biome, map.Elevation[i] - map.SeaLevel))
                 {
-                    kind = ResourceKind.Uranium;
-                }
-                else if ((lowland || biome == Biome.Marsh || biome == Biome.Coast) && oil.Fbm(x * 0.04f, y * 0.04f, 3) > 0.855f)
-                {
-                    kind = ResourceKind.Oil;
-                }
-                else if (mountains && tin.Fbm(x * 0.06f, y * 0.06f, 3) > 0.825f)
-                {
-                    kind = ResourceKind.Tin;
-                }
-                else if (dry && saltpeter.Fbm(x * 0.05f, y * 0.05f, 3) > 0.815f)
-                {
-                    kind = ResourceKind.Saltpeter;
-                }
-                else if ((forest || biome == Biome.Marsh) && coal.Fbm(x * 0.045f, y * 0.045f, 3) > 0.795f)
-                {
-                    kind = ResourceKind.Coal;
-                }
-                else if (hills && iron.Fbm(x * 0.05f, y * 0.05f, 3) > 0.755f)
-                {
-                    kind = ResourceKind.Iron;
-                }
-                else if (hills && copper.Fbm(x * 0.055f, y * 0.055f, 3) > 0.735f)
-                {
-                    kind = ResourceKind.Copper;
-                }
-                else if ((mountains || hills) && stone.Fbm(x * 0.07f, y * 0.07f, 3) > 0.62f)
-                {
-                    kind = ResourceKind.Stone;
-                }
-                else if (forest && wood.Fbm(x * 0.08f, y * 0.08f, 3) > 0.55f)
-                {
-                    kind = ResourceKind.Wood;
+                    continue;
                 }
 
-                map.ResourceAt[i] = (byte)kind;
+                tiles[count] = i;
+                scores[count] = noise.Fbm(x * frequency, y * frequency, 3);
+                count++;
             }
         }
+
+        if (count == 0)
+        {
+            return;
+        }
+
+        int target = (int)(land * Math.Clamp(share, 0f, 0.5f));
+        target = Math.Clamp(target, Math.Min(minimum, count), count);
+        if (target == 0)
+        {
+            return;
+        }
+
+        // Сортировка по возрастанию шума: самые рудные тайлы оказываются в хвосте.
+        Array.Sort(scores, tiles, 0, count);
+
+        for (int n = 0; n < target; n++)
+        {
+            map.ResourceAt[tiles[count - 1 - n]] = (byte)kind;
+        }
+    }
+
+    /// <summary>Где руда вообще может лежать. Маски те же, что были у порогов шума.</summary>
+    private static bool Fits(ResourceKind kind, Biome biome, float above)
+    {
+        bool mountains = biome == Biome.Mountain || biome == Biome.Peak;
+        bool hills = above > 0.07f;
+        bool forest = biome == Biome.TemperateForest || biome == Biome.Taiga || biome == Biome.Rainforest;
+        bool dry = biome == Biome.Desert || biome == Biome.Savanna || biome == Biome.Steppe;
+
+        return kind switch
+        {
+            ResourceKind.Uranium => mountains || dry,
+            ResourceKind.Oil => above < 0.06f || biome == Biome.Marsh,
+            ResourceKind.Tin => mountains,
+            ResourceKind.Saltpeter => dry,
+            ResourceKind.Coal => forest || biome == Biome.Marsh,
+            ResourceKind.Iron => hills,
+            ResourceKind.Copper => hills,
+            ResourceKind.Stone => mountains || hills,
+            ResourceKind.Wood => forest,
+            _ => false,
+        };
     }
 
     private static float SmoothStep(float edge0, float edge1, float value)
