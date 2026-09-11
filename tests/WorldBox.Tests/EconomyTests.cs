@@ -200,6 +200,66 @@ public sealed class EconomyTests
                 + market.StockOf(tribe, uranium).ToString("F2", CultureInfo.InvariantCulture));
     }
 
+    /// <summary>
+    /// Требование замысла: у города есть свой запас еды, иначе осада ничего не значит.
+    /// Амбар наполняется со склада народа и не растёт выше нормы на жителя,
+    /// а под осадой проедается: подвоза нет.
+    /// </summary>
+    [Fact]
+    public void CityGranaryFillsFromStoreAndDrainsUnderSiege()
+    {
+        EconomyTable? table = EconomyTable.Load(out string error);
+        Assert.True(table != null, "Таблица товаров не прочиталась: " + error);
+
+        const int size = 48;
+        const int seed = 8080;
+        const int ownedTiles = 900;
+        const int cityPeople = 60;
+
+        WorldMap map = WorldGenerator.Generate(size, size, seed);
+        var world = new WorldState(size, size, seed);
+        world.SetMap(map);
+
+        var tribes = new TribeStore();
+        var settlements = new SettlementStore();
+        var territory = new Territory(size, size, tribes.Capacity);
+
+        short tribe = tribes.Create("Хлебные", 1, 6, 6);
+        tribes.Era[tribe] = 2;
+        tribes.People[tribe] = cityPeople;
+        tribes.Settlements[tribe] = 1;
+
+        for (int index = 0; index < ownedTiles; index++)
+        {
+            territory.Claim(index, tribe);
+        }
+
+        int city = settlements.Found(6, 6, tribe, "Амбарный", 0L);
+        settlements.People[city] = cityPeople;
+
+        var market = new TribeMarket(tribes.Capacity, table!.Count);
+        var routes = new TradeNetwork(table.Trade.MaxRoutes);
+        var economy = new EconomySystem(table, tribes, settlements, territory, market, routes);
+        var loop = new SimulationLoop(world, economy);
+
+        loop.RunTicks(400);
+
+        float want = cityPeople * table.Storage.GranaryPerPerson;
+        float stored = settlements.Food[city];
+        Assert.True(stored > 0f, "Город не собрал запаса еды: амбар пуст.");
+        Assert.True(
+            stored <= want + 0.001f,
+            "Амбар держит больше нормы: " + stored.ToString("F2", CultureInfo.InvariantCulture));
+
+        // Осада: подвоза нет, запас проедается.
+        settlements.Siege[city] = 0.5f;
+        loop.RunTicks(100);
+
+        Assert.True(
+            settlements.Food[city] < stored,
+            "Осаждённый город не тронул запаса.");
+    }
+
     /// <summary>Собирает маленький мир с хозяйством и прогоняет его заданное число тиков.</summary>
     private static void Run(
         int seed,

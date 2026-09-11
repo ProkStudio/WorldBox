@@ -1,5 +1,6 @@
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Tribes;
+using WorldBox.Core.War;
 using WorldBox.Core.World;
 
 namespace WorldBox.Core.Economy;
@@ -31,6 +32,7 @@ public sealed class EconomySystem : ISimulationSystem
     private readonly Territory _territory;
     private readonly TribeMarket _market;
     private readonly TradeNetwork _routes;
+    private readonly Diplomacy? _diplomacy;
     private readonly int _goods;
     private readonly int[] _pendingTiles;
     private readonly float[] _pendingFertility;
@@ -54,7 +56,8 @@ public sealed class EconomySystem : ISimulationSystem
         SettlementStore settlements,
         Territory territory,
         TribeMarket market,
-        TradeNetwork routes)
+        TradeNetwork routes,
+        Diplomacy? diplomacy = null)
     {
         ArgumentNullException.ThrowIfNull(table);
         ArgumentNullException.ThrowIfNull(tribes);
@@ -74,6 +77,7 @@ public sealed class EconomySystem : ISimulationSystem
         _territory = territory;
         _market = market;
         _routes = routes;
+        _diplomacy = diplomacy;
         _goods = table.Count;
         _width = territory.Width;
         _height = territory.Height;
@@ -131,6 +135,7 @@ public sealed class EconomySystem : ISimulationSystem
 
         Produce();
         Consume();
+        Granary();
         Spoil();
         UpdatePrices();
         RunTrade();
@@ -351,6 +356,68 @@ public sealed class EconomySystem : ISimulationSystem
 
             _market.Deficit[t] = deficit;
             _market.Surplus[t] = surplus;
+        }
+    }
+
+    /// <summary>
+    /// Городской амбар. Город потихоньку тянет еду со склада своего народа и держит
+    /// запас на своих жителей, чтобы в осаде было чем кормиться. Под осадой подвоза нет
+    /// вовсе, и амбар проедается: когда он пуст, война берёт город голодом.
+    /// </summary>
+    private void Granary()
+    {
+        EconomyStorageSettings storage = _table.Storage;
+        float perPerson = storage.GranaryPerPerson;
+        if (perPerson <= 0f)
+        {
+            return;
+        }
+
+        int high = _settlements.HighWater;
+        for (int i = 0; i < high; i++)
+        {
+            if (!_settlements.Alive[i])
+            {
+                continue;
+            }
+
+            float want = _settlements.People[i] * perPerson;
+            if (want <= 0f)
+            {
+                _settlements.Food[i] = 0f;
+                continue;
+            }
+
+            float food = _settlements.Food[i];
+            if (_settlements.Siege[i] > 0f)
+            {
+                food -= want * storage.SiegeDrainShare;
+                _settlements.Food[i] = food > 0f ? food : 0f;
+                continue;
+            }
+
+            if (food >= want)
+            {
+                _settlements.Food[i] = want;
+                continue;
+            }
+
+            int tribe = _settlements.Tribe[i];
+            if ((uint)tribe >= (uint)Capacity || !_tribes.Alive[tribe])
+            {
+                continue;
+            }
+
+            int cell = (tribe * _goods) + EconomyTable.Food;
+            float carry = MathF.Min(want - food, want * storage.GranaryFillShare);
+            float taken = MathF.Min(carry, _market.Stock[cell]);
+            if (taken <= 0f)
+            {
+                continue;
+            }
+
+            _market.Stock[cell] -= taken;
+            _settlements.Food[i] = food + taken;
         }
     }
 
@@ -585,6 +652,13 @@ public sealed class EconomySystem : ISimulationSystem
 
                 int b = _settlements.Tribe[j];
                 if ((uint)b >= (uint)Capacity || !_tribes.Alive[b] || a == b)
+                {
+                    continue;
+                }
+
+                // На войне караваны не ходят. Пути собираются редко, поэтому блокада
+                // срабатывает не в день объявления войны, а на ближайшей пересборке сети.
+                if (_diplomacy != null && _diplomacy.IsAtWar(a, b))
                 {
                     continue;
                 }

@@ -17,7 +17,10 @@
     "perTile": 3,
     "perSettlement": 120,
     "spoilShare": 0.004,
-    "startFoodShare": 0.3
+    "startFoodShare": 0.3,
+    "granaryPerPerson": 1.5,
+    "granaryFillShare": 0.25,
+    "siegeDrainShare": 0.15
   },
   "price": {
     "base": 10,

@@ -36,11 +36,17 @@ public sealed record EconomyConsumptionSettings(
 /// <param name="PerSettlement">Вместимость на одно поселение.</param>
 /// <param name="SpoilShare">Какая доля запаса портится за прогон.</param>
 /// <param name="StartFoodShare">Какую долю склада еды народ имеет на старте партии.</param>
+/// <param name="GranaryPerPerson">Сколько еды город держит в своём амбаре на одного жителя.</param>
+/// <param name="GranaryFillShare">Какую долю амбара город успевает довезти со склада народа за один прогон.</param>
+/// <param name="SiegeDrainShare">Какую долю амбара город проедает за один прогон осады.</param>
 public sealed record EconomyStorageSettings(
     float PerTile,
     float PerSettlement,
     float SpoilShare,
-    float StartFoodShare);
+    float StartFoodShare,
+    float GranaryPerPerson,
+    float GranaryFillShare,
+    float SiegeDrainShare);
 
 /// <summary>Цены. Цена растёт от дефицита и падает от избытка.</summary>
 /// <param name="Base">Базовая цена товара со стоимостью 1 при полном складе.</param>

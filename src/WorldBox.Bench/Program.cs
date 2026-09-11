@@ -7,9 +7,10 @@ using WorldBox.Core.People;
 using WorldBox.Core.Roads;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Tribes;
+using WorldBox.Core.War;
 using WorldBox.Core.World;
 
-// Консольный замер симуляции без окна: карта, люди, племена, поселения, хозяйство и эпохи.
+// Консольный замер симуляции без окна: карта, люди, племена, поселения, хозяйство, эпохи и войны.
 // Пример: dotnet run -c Release --project src/WorldBox.Bench -- --ticks 5000 --size 512 --seed 1
 // Длинный прогон для проверки эпох и торговых путей: --ticks 100000
 int ticks = 5000;
@@ -79,6 +80,9 @@ var roads = new RoadNetwork(size, size);
 var roadSystem = new RoadSystem(tribes, settlements, roads);
 
 // Хозяйство собирается раньше эпох: эпохам нужны торговые ресурсы и надбавка к развитию.
+// Дипломатия нужна раньше хозяйства: между воюющими народами караваны не ходят.
+var diplomacy = new Diplomacy(tribes.Capacity);
+
 TribeMarket? market = null;
 TradeNetwork? routes = null;
 EconomySystem? economySystem = null;
@@ -86,7 +90,7 @@ if (economy != null)
 {
     market = new TribeMarket(tribes.Capacity, economy.Count);
     routes = new TradeNetwork(economy.Trade.MaxRoutes);
-    economySystem = new EconomySystem(economy, tribes, settlements, territory, market, routes);
+    economySystem = new EconomySystem(economy, tribes, settlements, territory, market, routes, diplomacy);
 }
 
 EraSystem? eraSystem = null;
@@ -94,6 +98,16 @@ if (table != null)
 {
     world.YearsPerTick = table.YearsPerTickOf(0);
     eraSystem = new EraSystem(table, tribes, territory, tech, market);
+}
+
+// Война идёт последней: она смотрит на уже обновлённые границы, склады и эпохи.
+WarTable? war = WarTable.Load(out string warError);
+ArmyStore? armies = null;
+WarSystem? warSystem = null;
+if (war != null)
+{
+    armies = new ArmyStore(war.Armies.MaxArmies);
+    warSystem = new WarSystem(war, table, people, tribes, settlements, territory, armies, diplomacy, market);
 }
 
 var systems = new List<ISimulationSystem> { populationSystem, settlementSystem, territorySystem, roadSystem };
@@ -105,6 +119,11 @@ if (economySystem != null)
 if (eraSystem != null)
 {
     systems.Add(eraSystem);
+}
+
+if (warSystem != null)
+{
+    systems.Add(warSystem);
 }
 
 var loop = new SimulationLoop(world, systems.ToArray());
@@ -267,10 +286,67 @@ else
     Console.WriteLine("Таблица товаров не прочитана, хозяйство в замер не вошло: {0}", economyError);
 }
 
+if (war != null && armies != null && warSystem != null)
+{
+    int menAtArms = 0;
+    for (int i = 0; i < armies.HighWater; i++)
+    {
+        if (armies.Alive[i])
+        {
+            menAtArms += armies.Men[i];
+        }
+    }
+
+    int besieged = 0;
+    float granaries = 0f;
+    for (int i = 0; i < settlements.HighWater; i++)
+    {
+        if (!settlements.Alive[i])
+        {
+            continue;
+        }
+
+        granaries += settlements.Food[i];
+        if (settlements.Siege[i] > 0f)
+        {
+            besieged++;
+        }
+    }
+
+    Console.WriteLine("Война:");
+    Console.WriteLine(
+        "  сейчас идёт войн: {0}, всего объявлено {1}, замирений {2}",
+        warSystem.ActiveWars,
+        diplomacy.DeclarationCount,
+        diplomacy.PeaceCount);
+    Console.WriteLine(
+        "  войск: {0} из {1}, людей под знамёнами {2}, больше всего за партию {3}",
+        armies.Count,
+        armies.Capacity,
+        menAtArms,
+        warSystem.PeakArmies);
+    Console.WriteLine(
+        "  битв: {0}, погибло в войнах {1}",
+        warSystem.TotalBattles,
+        warSystem.TotalDeaths);
+    Console.WriteLine(
+        "  городов взято: {0}, бунтов {1}, в осаде сейчас {2}",
+        warSystem.TotalCaptures,
+        warSystem.TotalRevolts,
+        besieged);
+    Console.WriteLine("  еды в городских амбарах: {0:F0}", granaries);
+    Console.WriteLine("  контрольная сумма войск: {0}", armies.Checksum());
+    Console.WriteLine("  контрольная сумма дипломатии: {0}", diplomacy.Checksum());
+}
+else
+{
+    Console.WriteLine("Таблица войны не прочитана, война в замер не вошла: {0}", warError);
+}
+
 Console.WriteLine();
 Console.WriteLine("Строка для docs/PERF.md:");
 Console.WriteLine(
-    "| {0:yyyy-MM-dd} | S5 | {1}x{1}, {2} народов, {3} человек, {4} путей | {5:F4} | {6:F4} | — |",
+    "| {0:yyyy-MM-dd} | S6 | {1}x{1}, {2} народов, {3} человек, {4} путей | {5:F4} | {6:F4} | — |",
     DateTime.Now,
     size,
     tribeCount,

@@ -33,6 +33,11 @@ public sealed class SettlementStore
         Radius = new byte[capacity];
         Founded = new long[capacity];
         Name = new string[capacity];
+        Food = new float[capacity];
+        Siege = new float[capacity];
+        Unrest = new float[capacity];
+        Origin = new short[capacity];
+        Captured = new long[capacity];
         Alive = new bool[capacity];
         _free = new int[capacity];
     }
@@ -63,6 +68,21 @@ public sealed class SettlementStore
 
     public string[] Name { get; }
 
+    /// <summary>Запас еды в городе. Город без запаса сдаётся осаждающему от голода.</summary>
+    public float[] Food { get; }
+
+    /// <summary>Ход осады от 0 до 1. Дошёл до единицы — город взят.</summary>
+    public float[] Siege { get; }
+
+    /// <summary>Недовольство от 0 до 1: взятые города бунтуют.</summary>
+    public float[] Unrest { get; }
+
+    /// <summary>Кто основал город. Бунт возвращает его прежнему владельцу.</summary>
+    public short[] Origin { get; }
+
+    /// <summary>На каком тике город взяли силой. Ноль — никогда.</summary>
+    public long[] Captured { get; }
+
     public bool[] Alive { get; }
 
     /// <summary>Возвращает номер слота или -1, если мест нет.</summary>
@@ -90,6 +110,11 @@ public sealed class SettlementStore
         Radius[index] = 1;
         Founded[index] = tick;
         Name[index] = name;
+        Food[index] = 0f;
+        Siege[index] = 0f;
+        Unrest[index] = 0f;
+        Origin[index] = tribe;
+        Captured[index] = 0L;
         Alive[index] = true;
         Count++;
         return index;
@@ -136,6 +161,8 @@ public sealed class SettlementStore
                 hash = Mix(hash, (ulong)(uint)Tribe[i]);
                 hash = Mix(hash, Level[i]);
                 hash = Mix(hash, (ulong)(uint)People[i]);
+                hash = Mix(hash, (ulong)(long)MathF.Round(Food[i]));
+                hash = Mix(hash, (ulong)(long)MathF.Round(Unrest[i] * 100f));
             }
 
             return hash;

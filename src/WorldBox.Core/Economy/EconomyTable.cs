@@ -320,7 +320,10 @@ public sealed class EconomyTable
             || !TryReadFloat(block, "perTile", out float perTile)
             || !TryReadFloat(block, "perSettlement", out float perSettlement)
             || !TryReadFloat(block, "spoilShare", out float spoilShare)
-            || !TryReadFloat(block, "startFoodShare", out float startFoodShare))
+            || !TryReadFloat(block, "startFoodShare", out float startFoodShare)
+            || !TryReadFloat(block, "granaryPerPerson", out float granaryPerPerson)
+            || !TryReadFloat(block, "granaryFillShare", out float granaryFillShare)
+            || !TryReadFloat(block, "siegeDrainShare", out float siegeDrainShare))
         {
             error = "Раздел storage в data/" + FileName + " отсутствует или заполнен не полностью.";
             return null;
@@ -344,8 +347,33 @@ public sealed class EconomyTable
             return null;
         }
 
+        if (granaryPerPerson < 0f)
+        {
+            error = "В разделе storage granaryPerPerson не может быть отрицательным.";
+            return null;
+        }
+
+        if (granaryFillShare <= 0f || granaryFillShare > 1f)
+        {
+            error = "В разделе storage granaryFillShare должен быть больше 0 и не больше 1.";
+            return null;
+        }
+
+        if (siegeDrainShare <= 0f || siegeDrainShare > 1f)
+        {
+            error = "В разделе storage siegeDrainShare должен быть больше 0 и не больше 1.";
+            return null;
+        }
+
         error = string.Empty;
-        return new EconomyStorageSettings(perTile, perSettlement, spoilShare, startFoodShare);
+        return new EconomyStorageSettings(
+            perTile,
+            perSettlement,
+            spoilShare,
+            startFoodShare,
+            granaryPerPerson,
+            granaryFillShare,
+            siegeDrainShare);
     }
 
     private static EconomyPriceSettings? ReadPrice(JsonElement root, out string error)

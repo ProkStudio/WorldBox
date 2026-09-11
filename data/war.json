@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "armies": {
+    "maxArmies": 256,
+    "menPerArmy": 50,
+    "menPerThousandPeople": 40,
+    "goldPerMan": 3,
+    "upkeepPerMan": 0.04,
+    "marchTilesPerRun": 2,
+    "retreatTiles": 3,
+    "moraleStart": 0.8,
+    "moraleRecovery": 0.03,
+    "supplyLossPerRun": 0.03,
+    "starveLossShare": 0.1,
+    "starveMoraleDrop": 0.05,
+    "disbandMen": 8
+  },
+  "battle": {
+    "eraPowerWeight": 0.25,
+    "moraleWeight": 0.6,
+    "terrainDefense": 0.3,
+    "supplyFloor": 0.4,
+    "lossShareWinner": 0.08,
+    "lossShareLoser": 0.3,
+    "moraleHitLoser": 0.35,
+    "moraleGainWinner": 0.05,
+    "retreatMorale": 0.3,
+    "civiliansPerSoldier": 0.5,
+    "lossRadius": 3
+  },
+  "siege": {
+    "progressPerRun": 0.02,
+    "reliefPerRun": 0.05,
+    "wallsPerLevel": 0.4,
+    "menForFullProgress": 60,
+    "starveMinProgress": 0.25,
+    "starvePerPerson": 0.15,
+    "sackShare": 0.12,
+    "annexRadius": 7
+  },
+  "war": {
+    "checkRuns": 6,
+    "minEra": 1,
+    "landHunger": 0.4,
+    "resourceGreed": 0.35,
+    "ambition": 0.015,
+    "allyJoin": 0.5,
+    "declarationsPerCheck": 2,
+    "maxChancePerCheck": 0.5,
+    "exhaustionPerSoldier": 0.0006,
+    "exhaustionDecay": 0.005,
+    "peaceExhaustion": 0.7,
+    "maxWarRuns": 1200,
+    "truceRuns": 300
+  },
+  "revolt": {
+    "unrestOnCapture": 0.65,
+    "unrestDecay": 0.008,
+    "chancePerRun": 0.03,
+    "minUnrest": 0.3,
+    "freeTribeChance": 0.5
+  }
+}
