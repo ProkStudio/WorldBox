@@ -80,6 +80,7 @@ public sealed class WorldBoxGame : Game
     private SettlementStore _settlements = null!;
     private Territory _territory = null!;
     private SettlementSystem _settlementSystem = null!;
+    private TerritorySystem _territorySystem = null!;
     private TribeTech _tech = null!;
     private EraSystem? _eraSystem;
     private TribeMarket? _market;
@@ -733,6 +734,7 @@ public sealed class WorldBoxGame : Game
 
         _populationSystem = new PopulationSystem(_people, null, _tech);
         _settlementSystem = new SettlementSystem(_people, _tribes, _settlements, _territory);
+        _territorySystem = new TerritorySystem(_tribes, _territory);
 
         // Хозяйство собирается раньше эпох: торговые ресурсы нужны самому первому переходу.
         if (_economyTable != null)
@@ -827,25 +829,31 @@ public sealed class WorldBoxGame : Game
     /// <summary>Короткая пометка для отчёта: включён слой или нет.</summary>
     private static string OnOff(bool value) => value ? "да" : "нет";
 
-    /// <summary>Собирает цикл из того, что удалось загрузить: без таблиц игра всё равно живая.</summary>
+    /// <summary>
+    /// Собирает цикл из того, что удалось загрузить: без таблиц игра всё равно живая.
+    /// Порядок важен: люди и поселения раньше земель, земли раньше хозяйства и эпох,
+    /// а список собирается один раз на мир, а не каждый тик.
+    /// </summary>
     private SimulationLoop BuildLoop()
     {
-        if (_economySystem != null && _eraSystem != null)
+        var systems = new List<ISimulationSystem>(8)
         {
-            return new SimulationLoop(_world, _populationSystem, _settlementSystem, _economySystem, _eraSystem);
-        }
+            _populationSystem,
+            _settlementSystem,
+            _territorySystem,
+        };
 
         if (_economySystem != null)
         {
-            return new SimulationLoop(_world, _populationSystem, _settlementSystem, _economySystem);
+            systems.Add(_economySystem);
         }
 
         if (_eraSystem != null)
         {
-            return new SimulationLoop(_world, _populationSystem, _settlementSystem, _eraSystem);
+            systems.Add(_eraSystem);
         }
 
-        return new SimulationLoop(_world, _populationSystem, _settlementSystem);
+        return new SimulationLoop(_world, systems.ToArray());
     }
 
     private void RebuildGraphics()

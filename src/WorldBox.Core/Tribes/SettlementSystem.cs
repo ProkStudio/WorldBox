@@ -242,7 +242,8 @@ public sealed class SettlementSystem : ISimulationSystem
                     continue;
                 }
 
-                Territory.Claim(index, tribe);
+                // Земля под самим городом — ядро: сглаживание границ её соседу не отдаст.
+                Territory.Claim(index, tribe, true);
             }
         }
     }

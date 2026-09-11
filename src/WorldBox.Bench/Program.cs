@@ -71,6 +71,7 @@ if (tribeCount > 0)
 
 var populationSystem = new PopulationSystem(people, null, tech);
 var settlementSystem = new SettlementSystem(people, tribes, settlements, territory);
+var territorySystem = new TerritorySystem(tribes, territory);
 
 // Хозяйство собирается раньше эпох: эпохам нужны торговые ресурсы и надбавка к развитию.
 TribeMarket? market = null;
@@ -90,7 +91,7 @@ if (table != null)
     eraSystem = new EraSystem(table, tribes, territory, tech, market);
 }
 
-var systems = new List<ISimulationSystem> { populationSystem, settlementSystem };
+var systems = new List<ISimulationSystem> { populationSystem, settlementSystem, territorySystem };
 if (economySystem != null)
 {
     systems.Add(economySystem);

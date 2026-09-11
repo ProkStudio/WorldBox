@@ -36,5 +36,17 @@ public sealed class TribeSettings
 
     public byte TownRadius { get; init; } = 7;
 
+    /// <summary>Сколько строк карты за тик просматривает рост границ. Полный круг по 512 строкам — 32 тика.</summary>
+    public int GrowRows { get; init; } = 16;
+
+    /// <summary>Сколько тайлов народ держит на одного жителя: пустынная империя из трёх человек не растёт.</summary>
+    public int TilesPerPerson { get; init; } = 8;
+
+    /// <summary>Сколько тайлов разрешено даже совсем малому народу.</summary>
+    public int BaseTiles { get; init; } = 64;
+
+    /// <summary>Сколько соседей чужого народа нужно, чтобы лоскут внутри его земли перешёл к нему.</summary>
+    public int SmoothNeed { get; init; } = 3;
+
     public static readonly TribeSettings Default = new TribeSettings();
 }

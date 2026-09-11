@@ -25,6 +25,7 @@ public sealed class Territory
         _width = width;
         _height = height;
         Owner = new short[width * height];
+        Core = new byte[width * height];
         Tiles = new int[tribeCapacity];
     }
 
@@ -33,6 +34,12 @@ public sealed class Territory
     public int Height => _height;
 
     public short[] Owner { get; }
+
+    /// <summary>
+    /// Ядро владений: тайл занят самим поселением. Сглаживание границ такие тайлы не отдаёт,
+    /// иначе город на краю страны терял бы землю под собственными домами.
+    /// </summary>
+    public byte[] Core { get; }
 
     /// <summary>Сколько тайлов у каждого народа.</summary>
     public int[] Tiles { get; }
@@ -51,7 +58,13 @@ public sealed class Territory
     }
 
     /// <summary>Ставит владельца тайлу. Возвращает true, если владелец сменился.</summary>
-    public bool Claim(int index, short tribe)
+    public bool Claim(int index, short tribe) => Claim(index, tribe, false);
+
+    /// <summary>
+    /// Ставит владельца тайлу. Флаг core помечает землю под самим поселением:
+    /// такой тайл не уходит при сглаживании границ. Возвращает true, если владелец сменился.
+    /// </summary>
+    public bool Claim(int index, short tribe, bool core)
     {
         if ((uint)index >= (uint)Owner.Length || (uint)tribe >= (uint)Tiles.Length)
         {
@@ -61,6 +74,12 @@ public sealed class Territory
         short current = Owner[index];
         if (current == tribe)
         {
+            // Владелец тот же, но пометку ядра обновить надо: поселение могло вырасти.
+            if (core)
+            {
+                Core[index] = 1;
+            }
+
             return false;
         }
 
@@ -84,6 +103,7 @@ public sealed class Territory
         }
 
         Owner[index] = tribe;
+        Core[index] = core ? (byte)1 : (byte)0;
         Version++;
         return true;
     }
@@ -141,6 +161,7 @@ public sealed class Territory
     public void Clear()
     {
         Array.Clear(Owner, 0, Owner.Length);
+        Array.Clear(Core, 0, Core.Length);
         Array.Clear(Tiles, 0, Tiles.Length);
         Claimed = 0;
         Version++;
