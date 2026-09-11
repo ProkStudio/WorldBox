@@ -20,8 +20,15 @@ public sealed class PopulationSettings
 
     public float OldAgeChance { get; init; } = 0.35f;
 
-    /// <summary>Шанс родить за тик у сытого взрослого. Голод его снижает.</summary>
+    /// <summary>
+    /// Ожидаемое число детей у сытого взрослого за опорный пятилетний тик. Голод его снижает.
+    /// При длинном тике число растёт пропорционально годам, поэтому за тик их может быть больше одного.
+    /// За тридцать фертильных лет это даёт около 1,7 ребёнка на человека — чуть выше замещения.
+    /// </summary>
     public float BirthChance { get; init; } = 0.28f;
+
+    /// <summary>Предохранитель: сколько детей один взрослый может завести за один тик.</summary>
+    public int MaxBirthsPerTick { get; init; } = 4;
 
     /// <summary>Выше этого голода детей не заводят.</summary>
     public float BirthHungerLimit { get; init; } = 0.55f;

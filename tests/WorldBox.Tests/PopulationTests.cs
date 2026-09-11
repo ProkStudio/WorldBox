@@ -90,11 +90,29 @@ public class PopulationTests
         AssertEveryoneOnLand(people, world.Map!);
     }
 
-    private static (WorldState World, Population People, SimulationLoop Loop) Build(int seed)
+    [Fact]
+    public void PeopleSurviveTwentyFiveYearTicksOfFirstEra()
+    {
+        // Первая эпоха сжимает время до двадцати пяти лет в тике (data/eras.json).
+        // Раньше при таком тике рождаемость упиралась в потолок «один ребёнок за тик»,
+        // а смертность — нет, и мир вымирал в палеолите за три десятка тиков.
+        (WorldState world, Population people, SimulationLoop loop) = Build(77, 25f);
+
+        loop.RunTicks(200);
+
+        Assert.True(
+            people.Count >= StartPeople,
+            "При двадцати пяти годах в тике народ должен жить, а осталось жителей: " + people.Count);
+        Assert.True(people.Count <= people.Capacity);
+        AssertEveryoneOnLand(people, world.Map!);
+    }
+
+    private static (WorldState World, Population People, SimulationLoop Loop) Build(int seed, float yearsPerTick = 5f)
     {
         WorldMap map = WorldGenerator.Generate(Size, Size, seed);
         var world = new WorldState(Size, Size, seed);
         world.SetMap(map);
+        world.YearsPerTick = yearsPerTick;
 
         var people = new Population(Capacity, Size, Size);
         PopulationSeeder.Seed(world, people, StartPeople);

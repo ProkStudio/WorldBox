@@ -12,6 +12,12 @@ namespace WorldBox.Core.People;
 /// Настройки посчитаны на опорный пятилетний тик. Когда система эпох сжимает время,
 /// шансы пересчитываются на новую длину тика: иначе при двадцати пяти годах в тике
 /// люди умирали бы от старости быстрее, чем успевали рожать, и мир вымирал бы в палеолите.
+///
+/// Смерть у человека одна, поэтому шансы смерти и переезда пересчитываются по правилу
+/// «хотя бы раз за тик». А детей за длинный тик бывает несколько, поэтому рождаемость — это
+/// ожидаемое число детей (ставка умножается на длину тика), а не один шанс на тик.
+/// Старый потолок «не больше одного ребёнка за тик» в палеолите давал на человека 0,8 ребёнка
+/// за всю жизнь — меньше замещения, и мир вымирал за тридцать тиков.
 /// </summary>
 public sealed class PopulationSystem : ISimulationSystem
 {
@@ -63,7 +69,9 @@ public sealed class PopulationSystem : ISimulationSystem
         float oldAgeChance = Compound(settings.OldAgeChance, ratio);
         float starveChance = Compound(settings.StarveChance, ratio);
         float moveChance = Compound(settings.MoveChance, ratio);
-        float birthChance = Compound(settings.BirthChance, ratio);
+
+        // Рождаемость масштабируется линейно: за вдвое дольший тик рождается вдвое больше детей.
+        float birthRate = settings.BirthChance * ratio;
         float hungerGain = settings.HungerGain * ratio;
         float foodFactor = settings.FoodFactor * ratio;
 
@@ -159,11 +167,29 @@ public sealed class PopulationSystem : ISimulationSystem
             if (age >= settings.AdultAge
                 && age <= settings.LastFertileAge
                 && hunger < settings.BirthHungerLimit
-                && people.HasRoom
-                && rng.Chance(birthChance * (1f - hunger)))
+                && people.HasRoom)
             {
-                if (people.Spawn(x, y, people.Tribe[i], 0f) >= 0)
+                // Целая часть — дети, которые родятся точно, дробная — один бросок кости.
+                // Бросок делается всегда, чтобы поток случайных чисел не зависел от веток.
+                float expected = birthRate * (1f - hunger);
+                int children = (int)expected;
+                if (rng.Chance(expected - children))
                 {
+                    children++;
+                }
+
+                if (children > settings.MaxBirthsPerTick)
+                {
+                    children = settings.MaxBirthsPerTick;
+                }
+
+                for (int child = 0; child < children; child++)
+                {
+                    if (!people.HasRoom || people.Spawn(x, y, people.Tribe[i], 0f) < 0)
+                    {
+                        break;
+                    }
+
                     births++;
                 }
             }
