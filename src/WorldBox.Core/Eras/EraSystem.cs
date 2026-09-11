@@ -8,12 +8,16 @@ namespace WorldBox.Core.Eras;
 /// <summary>
 /// Развитие народов по эпохам. За один запуск система делает четыре вещи:
 /// смотрит полосу карты и собирает, что у народа есть на земле и с кем он граничит;
-/// считает доступ к ресурсам через соседей; двигает эпохи вперёд или назад;
+/// считает доступ к ресурсам через соседей и торговлю; двигает эпохи вперёд или назад;
 /// выставляет сжатие времени по самому развитому народу.
 ///
 /// Карта обходится по частям: за один запуск смотрим полосу строк, а результат публикуем
 /// только после полного круга. Иначе на карте 1024 на 1024 один тик врезался бы в кадр.
 /// Аллокаций в тике нет, случайность только из world.Rng.
+///
+/// Если передан <see cref="ITradeAccess"/>, к доступу по границе добавляются товары,
+/// которые народ получает караванами, и торговый бонус к исследованиям. Без него
+/// система работает как раньше: чужая медь доступна только через общую границу.
 /// </summary>
 public sealed class EraSystem : ISimulationSystem
 {
@@ -27,6 +31,7 @@ public sealed class EraSystem : ISimulationSystem
     private readonly TribeStore _tribes;
     private readonly Territory _territory;
     private readonly TribeTech _tech;
+    private readonly ITradeAccess? _trade;
     private readonly float[] _perAgent;
     private readonly int[] _pendingResources;
     private readonly int[] _pendingFertile;
@@ -41,7 +46,17 @@ public sealed class EraSystem : ISimulationSystem
 
     private int _scanRow;
 
-    public EraSystem(EraTable table, TribeStore tribes, Territory territory, TribeTech tech)
+    /// <param name="table">Таблица эпох из data/eras.json.</param>
+    /// <param name="tribes">Народы мира.</param>
+    /// <param name="territory">Владения: по ним считается земля народа.</param>
+    /// <param name="tech">Технологическое состояние народов.</param>
+    /// <param name="trade">Откуда брать торговый доступ к чужим ресурсам. Необязателен.</param>
+    public EraSystem(
+        EraTable table,
+        TribeStore tribes,
+        Territory territory,
+        TribeTech tech,
+        ITradeAccess? trade = null)
     {
         ArgumentNullException.ThrowIfNull(table);
         ArgumentNullException.ThrowIfNull(tribes);
@@ -57,6 +72,7 @@ public sealed class EraSystem : ISimulationSystem
         _tribes = tribes;
         _territory = territory;
         _tech = tech;
+        _trade = trade;
         _width = territory.Width;
         _height = territory.Height;
         _rowsPerRun = Math.Max(1, _height / SweepParts);
@@ -243,7 +259,11 @@ public sealed class EraSystem : ISimulationSystem
         }
     }
 
-    /// <summary>Что народ может выменять у соседей. Пока граница равна торговому пути.</summary>
+    /// <summary>
+    /// Что народ может выменять. Граница даёт доступ к ресурсам соседа, а торговые пути —
+    /// к ресурсам партнёров, до которых идут караваны и корабли. Маска собирается каждый
+    /// запуск заново, поэтому потеря пути честно закрывает доступ к чужому олову.
+    /// </summary>
     private void UpdateTrade()
     {
         for (int t = 1; t < Capacity; t++)
@@ -264,6 +284,11 @@ public sealed class EraSystem : ISimulationSystem
                 {
                     mask |= _tech.OwnResources[neighbor];
                 }
+            }
+
+            if (_trade != null)
+            {
+                mask |= _trade.TradeResourcesOf(t);
             }
 
             _tech.TradeResources[t] = mask;
@@ -395,16 +420,21 @@ public sealed class EraSystem : ISimulationSystem
         return best;
     }
 
-    /// <summary>Сколько очков знания народ даёт за тик.</summary>
+    /// <summary>
+    /// Сколько очков знания народ даёт за тик. Торговля прибавляется отдельным слагаемым:
+    /// караваны везут не только медь, но и чужие приёмы, поэтому торговые державы
+    /// обгоняют изолированные даже без общей границы.
+    /// </summary>
     private float ResearchRate(int tribe, int nextEra)
     {
         EraResearchSettings research = _table.Research;
         float rate = 1f + (_tribes.Settlements[tribe] * research.SettlementBonus);
+        float trade = _trade?.ResearchBonusOf(tribe) ?? 0f;
 
         ulong contacts = _tech.Contacts[tribe];
         if (contacts == 0UL)
         {
-            return rate * research.IsolatedPenalty;
+            return (rate * research.IsolatedPenalty) + trade;
         }
 
         int ahead = 0;
@@ -418,7 +448,7 @@ public sealed class EraSystem : ISimulationSystem
             }
         }
 
-        return rate + (ahead * research.NeighborBonus);
+        return rate + (ahead * research.NeighborBonus) + trade;
     }
 
     private void Promote(WorldState world, int tribe, int nextEra)
