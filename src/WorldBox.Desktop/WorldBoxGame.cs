@@ -810,4 +810,10 @@ public sealed class WorldBoxGame : Game
         _resizing = true;
         _graphics.PreferredBackBufferWidth = Math.Max(800, Window.ClientBounds.Width);
         _graphics.PreferredBackBufferHeight = Math.Max(450, Window.ClientBounds.Height);
-        _graphics.
+        _graphics.ApplyChanges();
+        _camera.SetViewport(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        _minimap?.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        _toolbar.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        _resizing = false;
+    }
+}
