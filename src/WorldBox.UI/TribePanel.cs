@@ -1,5 +1,6 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using WorldBox.Core.Art;
 using WorldBox.Core.Eras;
 using WorldBox.Core.Tribes;
 using WorldBox.Core.World;
@@ -20,15 +21,9 @@ public sealed class TribePanel
     public const int MaxRows = 10;
 
     private const int PanelWidth = 560;
+    private const int IconSpace = 22;
 
-    private static readonly Color PanelColor = new Color(10, 12, 16, 200);
-    private static readonly Color BorderColor = new Color(255, 255, 255, 45);
-    private static readonly Color TitleColor = new Color(206, 178, 240);
-    private static readonly Color TextColor = new Color(226, 226, 226);
-    private static readonly Color DimColor = new Color(158, 158, 166);
-    private static readonly Color BlockedColor = new Color(226, 168, 120);
-    private static readonly Color DarkAgeColor = new Color(233, 115, 102);
-    private static readonly Color TopColor = new Color(158, 204, 172);
+    private static readonly Color EraColor = new Color(206, 178, 240);
 
     private readonly TextBuilder _line = new TextBuilder(192);
     private readonly int[] _order = new int[MaxRows];
@@ -36,6 +31,9 @@ public sealed class TribePanel
     public bool Visible { get; set; }
 
     public int Scale { get; set; } = 2;
+
+    /// <summary>Отступ от низа окна. Игра поднимает панель над мини-картой.</summary>
+    public int BottomMargin { get; set; } = 12;
 
     /// <summary>Сколько народов показано в последнем кадре.</summary>
     public int DrawnRows { get; private set; }
@@ -48,7 +46,8 @@ public sealed class TribePanel
         TribeTech? tech,
         EraTable? table,
         int viewportWidth,
-        int viewportHeight)
+        int viewportHeight,
+        UiSkin? skin = null)
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(font);
@@ -75,21 +74,31 @@ public sealed class TribePanel
 
         int rows = Collect(tribes);
         int textLines = rows > 0 ? 1 + (rows * 2) : 2;
-        int height = (step * textLines) + (10 * scale);
-        var panel = new Rectangle(viewportWidth - PanelWidth - 12, viewportHeight - height - 12, PanelWidth, height);
-        primitives.FillRect(batch, panel, PanelColor);
-        primitives.FrameRect(batch, panel, BorderColor);
+        int height = (step * textLines) + (11 * scale);
+        var panel = new Rectangle(
+            viewportWidth - PanelWidth - 14,
+            viewportHeight - height - BottomMargin,
+            PanelWidth,
+            height);
 
-        int x = panel.X + (6 * scale);
+        UiChrome.Panel(batch, primitives, skin, panel);
+
+        int iconX = panel.X + (5 * scale);
+        int x = iconX + (skin != null ? IconSpace : 0);
         int y = panel.Y + (5 * scale);
 
+        if (skin != null)
+        {
+            skin.Icon(batch, IconKind.Tribes, iconX, y + ((step - IconAtlas.IconSize) / 2), 1);
+        }
+
         _line.Clear().Append(Strings.Get("panel.tribes")).Append("   ").Append(alive);
-        font.Draw(batch, _line.Span, new Vector2(x, y), TitleColor, scale);
+        font.Draw(batch, _line.Span, new Vector2(x, y), UiPalette.Accent, scale);
         y += step;
 
         if (rows == 0)
         {
-            font.Draw(batch, Strings.Get("panel.no_tribes"), new Vector2(x, y), DimColor, scale);
+            font.Draw(batch, Strings.Get("panel.no_tribes"), new Vector2(x, y), UiPalette.TextMuted, scale);
             return;
         }
 
@@ -98,12 +107,19 @@ public sealed class TribePanel
             int tribe = _order[i];
             Color color = TribePalette.Of(tribes.ColorIndex[tribe]);
 
-            // Цветной квадратик — тот же цвет, что у владений на карте.
-            var swatch = new Rectangle(x, y + scale, step - (2 * scale), step - (3 * scale));
-            primitives.FillRect(batch, swatch, color);
-            primitives.FrameRect(batch, swatch, BorderColor);
+            // Полоска на две строки: сразу видно, где заканчивается один народ и начинается другой.
+            if ((i & 1) == 0)
+            {
+                var stripe = new Rectangle(panel.X + (3 * scale), y, PanelWidth - (6 * scale), step * 2);
+                primitives.FillRect(batch, stripe, UiPalette.PanelLight * 0.45f);
+            }
 
-            int textX = x + step;
+            // Цветной квадратик — тот же цвет, что у владений на карте и у таблички города.
+            var swatch = new Rectangle(iconX, y + scale, step - (2 * scale), step - (3 * scale));
+            primitives.FillRect(batch, swatch, color);
+            primitives.FrameRect(batch, swatch, UiPalette.Border, 1);
+
+            int textX = iconX + step + (2 * scale);
             _line.Clear().Append(tribes.Name[tribe] ?? string.Empty);
             if (table != null)
             {
@@ -114,7 +130,7 @@ public sealed class TribePanel
             font.Draw(batch, _line.Span, new Vector2(textX, y), color, scale);
             y += step;
 
-            DrawStatus(batch, font, tribes, tech, table, tribe, textX, y, scale);
+            DrawStatus(batch, font, skin, tribes, tech, table, tribe, textX, y, step, scale);
             y += step;
         }
 
@@ -125,12 +141,14 @@ public sealed class TribePanel
     private void DrawStatus(
         SpriteBatch batch,
         PixelFont font,
+        UiSkin? skin,
         TribeStore tribes,
         TribeTech? tech,
         EraTable? table,
         int tribe,
         int x,
         int y,
+        int step,
         int scale)
     {
         bool tracked = tech != null && (uint)tribe < (uint)tech.Capacity;
@@ -141,12 +159,13 @@ public sealed class TribePanel
             .Append("   ").Append(Strings.Get("panel.settlements_short")).Append(' ').Append(tribes.Settlements[tribe])
             .Append("   ");
 
-        Color color = DimColor;
+        Color color = UiPalette.TextMuted;
+        IconKind icon = IconKind.People;
 
         if (table == null)
         {
             _line.Append(Strings.Get("panel.no_eras"));
-            font.Draw(batch, _line.Span, new Vector2(x, y), color, scale);
+            DrawStatusLine(batch, font, skin, icon, x, y, step, color, scale);
             return;
         }
 
@@ -163,39 +182,66 @@ public sealed class TribePanel
         {
             case EraBlock.Top:
                 _line.Append(Strings.Get("panel.era_top"));
-                color = TopColor;
+                color = UiPalette.Good;
+                icon = IconKind.Star;
                 break;
 
             case EraBlock.DarkAge:
                 _line.Append(Strings.Get("panel.dark_age"));
-                color = DarkAgeColor;
+                color = UiPalette.Bad;
+                icon = IconKind.Warning;
                 break;
 
             case EraBlock.People:
                 _line.Append(Strings.Get("panel.need_people")).Append(' ').AppendGrouped(table.MinPop[next]);
-                color = BlockedColor;
+                color = UiPalette.Accent;
+                icon = IconKind.People;
                 break;
 
             case EraBlock.Resource:
                 ResourceKind missing = EraRules.FirstMissing(tracked ? tech!.MissingResources[tribe] : 0);
                 _line.Append(Strings.Get("panel.need_resource")).Append(' ').Append(Strings.Get(ResourceKinds.NameKey(missing)));
-                color = BlockedColor;
+                color = UiPalette.Accent;
+                icon = IconKind.MapResources;
                 break;
 
             case EraBlock.Geography:
                 GeoFeature feature = EraRules.FirstMissingGeo(tracked ? tech!.MissingGeo[tribe] : (byte)0);
                 _line.Append(Strings.Get("panel.need_geo")).Append(' ').Append(Strings.Get(EraRules.GeoNameKey(feature)));
-                color = BlockedColor;
+                color = UiPalette.Accent;
+                icon = IconKind.MapTerrain;
                 break;
 
             default:
                 float share = tracked ? tech!.ProgressShare(table, era, tribe) : 0f;
                 _line.Append(Strings.Get("panel.progress")).Append(' ').Append((int)MathF.Round(share * 100f)).Append('%');
-                color = TextColor;
+                color = EraColor;
+                icon = IconKind.Era;
                 break;
         }
 
-        font.Draw(batch, _line.Span, new Vector2(x, y), color, scale);
+        DrawStatusLine(batch, font, skin, icon, x, y, step, color, scale);
+    }
+
+    private void DrawStatusLine(
+        SpriteBatch batch,
+        PixelFont font,
+        UiSkin? skin,
+        IconKind icon,
+        int x,
+        int y,
+        int step,
+        Color color,
+        int scale)
+    {
+        int textX = x;
+        if (skin != null)
+        {
+            skin.Icon(batch, icon, x, y + ((step - IconAtlas.IconSize) / 2), 1);
+            textX += IconSpace;
+        }
+
+        font.Draw(batch, _line.Span, new Vector2(textX, y), color, scale);
     }
 
     /// <summary>Отбирает самые многолюдные народы вставкой в готовый массив, без сортировки списков.</summary>

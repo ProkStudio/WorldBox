@@ -1,5 +1,6 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using WorldBox.Core.Art;
 using WorldBox.Core.Eras;
 using WorldBox.Core.Tribes;
 using WorldBox.Core.World;
@@ -20,13 +21,7 @@ public sealed class TileInspector
 
     private const int PanelWidth = 560;
     private const int PanelLines = 9;
-
-    private static readonly Color PanelColor = new Color(10, 12, 16, 200);
-    private static readonly Color BorderColor = new Color(255, 255, 255, 45);
-    private static readonly Color TextColor = new Color(226, 226, 226);
-    private static readonly Color AccentColor = new Color(94, 159, 232);
-    private static readonly Color DimColor = new Color(150, 150, 158);
-    private static readonly Color BlockedColor = new Color(226, 168, 120);
+    private const int IconSpace = 22;
 
     private readonly TextBuilder _line = new TextBuilder(192);
 
@@ -49,7 +44,8 @@ public sealed class TileInspector
         TribeStore? tribes = null,
         TribeTech? tech = null,
         EraTable? table = null,
-        SettlementStore? settlements = null)
+        SettlementStore? settlements = null,
+        UiSkin? skin = null)
     {
         if (!Visible)
         {
@@ -59,25 +55,26 @@ public sealed class TileInspector
         int scale = Math.Max(1, Scale);
         int step = font.LineHeight * scale;
         var panel = new Rectangle(
-            12,
+            14,
             viewportHeight - (step * PanelLines) - (14 * scale) - 12,
             PanelWidth,
-            (step * PanelLines) + (10 * scale));
-        primitives.FillRect(batch, panel, PanelColor);
-        primitives.FrameRect(batch, panel, BorderColor);
+            (step * PanelLines) + (11 * scale));
 
-        int x = panel.X + (6 * scale);
+        UiChrome.Panel(batch, primitives, skin, panel);
+
+        int iconX = panel.X + (5 * scale);
+        int x = iconX + (skin != null ? IconSpace : 0);
         int y = panel.Y + (5 * scale);
 
         _line.Clear()
             .Append(Strings.Get("panel.map_mode")).Append(": ").Append(Strings.Get(MapModes.NameKey(mode)));
-        font.Draw(batch, _line.Span, new Vector2(x, y), AccentColor, scale);
+        DrawLine(batch, font, skin, IconKind.Legend, iconX, x, y, step, UiPalette.Accent, scale);
         y += step;
 
         if (!inside)
         {
-            font.Draw(batch, Strings.Get("panel.no_tile"), new Vector2(x, y), TextColor, scale);
-            DrawFooter(batch, font, map, generationMs, x, panel.Bottom - step - (4 * scale), scale);
+            font.Draw(batch, Strings.Get("panel.no_tile"), new Vector2(x, y), UiPalette.Text, scale);
+            DrawFooter(batch, font, skin, map, generationMs, iconX, x, panel.Bottom - step - (4 * scale), step, scale);
             return;
         }
 
@@ -88,19 +85,19 @@ public sealed class TileInspector
         _line.Clear()
             .Append(Strings.Get(Biomes.NameKey(biome)))
             .Append("   ").Append(tileX).Append(", ").Append(tileY);
-        font.Draw(batch, _line.Span, new Vector2(x, y), TextColor, scale);
+        DrawLine(batch, font, skin, IconKind.Inspect, iconX, x, y, step, UiPalette.Text, scale);
         y += step;
 
         _line.Clear()
             .Append(Strings.Get("panel.height")).Append(' ').Append(Percent(map.Elevation[index])).Append("%   ")
             .Append(Strings.Get("panel.temperature")).Append(' ').Append(Celsius(map.Temperature[index])).Append("°");
-        font.Draw(batch, _line.Span, new Vector2(x, y), TextColor, scale);
+        DrawLine(batch, font, skin, IconKind.MapHeight, iconX, x, y, step, UiPalette.Text, scale);
         y += step;
 
         _line.Clear()
             .Append(Strings.Get("panel.moisture")).Append(' ').Append(Percent(map.Moisture[index])).Append("%   ")
             .Append(Strings.Get("panel.fertility")).Append(' ').Append(Percent(map.Fertility[index])).Append('%');
-        font.Draw(batch, _line.Span, new Vector2(x, y), TextColor, scale);
+        DrawLine(batch, font, skin, IconKind.MapMoisture, iconX, x, y, step, UiPalette.Text, scale);
         y += step;
 
         _line.Clear().Append(Strings.Get("panel.resource")).Append(' ');
@@ -113,24 +110,36 @@ public sealed class TileInspector
             _line.Append(Strings.Get(ResourceKinds.NameKey(resource)));
         }
 
-        font.Draw(batch, _line.Span, new Vector2(x, y), TextColor, scale);
+        DrawLine(
+            batch,
+            font,
+            skin,
+            IconKind.MapResources,
+            iconX,
+            x,
+            y,
+            step,
+            resource == ResourceKind.None ? UiPalette.TextMuted : UiPalette.Text,
+            scale);
         y += step;
 
-        y = DrawOwner(batch, font, territory, tribes, tech, table, index, x, y, step, scale);
-        DrawSettlement(batch, font, settlements, tribes, tileX, tileY, x, y, scale);
+        y = DrawOwner(batch, font, skin, territory, tribes, tech, table, index, iconX, x, y, step, scale);
+        DrawSettlement(batch, font, skin, settlements, tribes, tileX, tileY, iconX, x, y, step, scale);
 
-        DrawFooter(batch, font, map, generationMs, x, panel.Bottom - step - (4 * scale), scale);
+        DrawFooter(batch, font, skin, map, generationMs, iconX, x, panel.Bottom - step - (4 * scale), step, scale);
     }
 
     /// <summary>Чья это земля и что у хозяев с развитием. Возвращает новую высоту курсора рисования.</summary>
     private int DrawOwner(
         SpriteBatch batch,
         PixelFont font,
+        UiSkin? skin,
         Territory? territory,
         TribeStore? tribes,
         TribeTech? tech,
         EraTable? table,
         int index,
+        int iconX,
         int x,
         int y,
         int step,
@@ -144,19 +153,21 @@ public sealed class TileInspector
         short owner = territory.Owner[index];
         if (owner == TribeStore.None || !tribes.IsAlive(owner))
         {
-            font.Draw(batch, Strings.Get("panel.no_owner"), new Vector2(x, y), DimColor, scale);
+            _line.Clear().Append(Strings.Get("panel.no_owner"));
+            DrawLine(batch, font, skin, IconKind.Borders, iconX, x, y, step, UiPalette.TextMuted, scale);
             return y + step;
         }
 
         Color color = TribePalette.Of(tribes.ColorIndex[owner]);
         _line.Clear()
             .Append(Strings.Get("panel.owner")).Append(' ').Append(tribes.Name[owner] ?? string.Empty);
-        font.Draw(batch, _line.Span, new Vector2(x, y), color, scale);
+        DrawLine(batch, font, skin, IconKind.Borders, iconX, x, y, step, color, scale);
         y += step;
 
         if (table == null)
         {
-            font.Draw(batch, Strings.Get("panel.no_eras"), new Vector2(x, y), DimColor, scale);
+            _line.Clear().Append(Strings.Get("panel.no_eras"));
+            DrawLine(batch, font, skin, IconKind.Era, iconX, x, y, step, UiPalette.TextMuted, scale);
             return y + step;
         }
 
@@ -166,7 +177,8 @@ public sealed class TileInspector
         _line.Clear()
             .Append(Strings.Get("panel.era")).Append(' ').Append(Strings.Get(table.NameKeyOf(era))).Append("   ");
 
-        Color stateColor = TextColor;
+        Color stateColor = UiPalette.Text;
+        IconKind icon = IconKind.Era;
         EraBlock block = tracked ? tech!.BlockOf(owner) : EraBlock.Ready;
         if (era + 1 >= table.Count)
         {
@@ -177,28 +189,34 @@ public sealed class TileInspector
         {
             case EraBlock.Top:
                 _line.Append(Strings.Get("panel.era_top"));
+                stateColor = UiPalette.Good;
+                icon = IconKind.Star;
                 break;
 
             case EraBlock.DarkAge:
                 _line.Append(Strings.Get("panel.dark_age"));
-                stateColor = BlockedColor;
+                stateColor = UiPalette.Bad;
+                icon = IconKind.Warning;
                 break;
 
             case EraBlock.People:
                 _line.Append(Strings.Get("panel.need_people")).Append(' ').AppendGrouped(table.MinPop[era + 1]);
-                stateColor = BlockedColor;
+                stateColor = UiPalette.Accent;
+                icon = IconKind.People;
                 break;
 
             case EraBlock.Resource:
                 ResourceKind missing = EraRules.FirstMissing(tracked ? tech!.MissingResources[owner] : 0);
                 _line.Append(Strings.Get("panel.need_resource")).Append(' ').Append(Strings.Get(ResourceKinds.NameKey(missing)));
-                stateColor = BlockedColor;
+                stateColor = UiPalette.Accent;
+                icon = IconKind.MapResources;
                 break;
 
             case EraBlock.Geography:
                 GeoFeature feature = EraRules.FirstMissingGeo(tracked ? tech!.MissingGeo[owner] : (byte)0);
                 _line.Append(Strings.Get("panel.need_geo")).Append(' ').Append(Strings.Get(EraRules.GeoNameKey(feature)));
-                stateColor = BlockedColor;
+                stateColor = UiPalette.Accent;
+                icon = IconKind.MapTerrain;
                 break;
 
             default:
@@ -207,7 +225,7 @@ public sealed class TileInspector
                 break;
         }
 
-        font.Draw(batch, _line.Span, new Vector2(x, y), stateColor, scale);
+        DrawLine(batch, font, skin, icon, iconX, x, y, step, stateColor, scale);
         return y + step;
     }
 
@@ -215,12 +233,15 @@ public sealed class TileInspector
     private void DrawSettlement(
         SpriteBatch batch,
         PixelFont font,
+        UiSkin? skin,
         SettlementStore? settlements,
         TribeStore? tribes,
         int tileX,
         int tileY,
+        int iconX,
         int x,
         int y,
+        int step,
         int scale)
     {
         if (settlements == null)
@@ -265,9 +286,9 @@ public sealed class TileInspector
         short tribe = settlements.Tribe[nearest];
         Color color = tribes != null && tribes.IsAlive(tribe)
             ? TribePalette.Of(tribes.ColorIndex[tribe])
-            : TextColor;
+            : UiPalette.Text;
 
-        font.Draw(batch, _line.Span, new Vector2(x, y), color, scale);
+        DrawLine(batch, font, skin, IconKind.Settlement, iconX, x, y, step, color, scale);
     }
 
     private static string LevelKey(byte level)
@@ -280,14 +301,45 @@ public sealed class TileInspector
         return level == SettlementStore.Village ? "settlement.village" : "settlement.camp";
     }
 
-    private void DrawFooter(SpriteBatch batch, PixelFont font, WorldMap map, double generationMs, int x, int y, int scale)
+    private void DrawFooter(
+        SpriteBatch batch,
+        PixelFont font,
+        UiSkin? skin,
+        WorldMap map,
+        double generationMs,
+        int iconX,
+        int x,
+        int y,
+        int step,
+        int scale)
     {
         _line.Clear()
             .Append(Strings.Get("panel.seed")).Append(' ').Append(map.Seed)
             .Append("   ").Append(Strings.Get("panel.land")).Append(' ')
             .Append(Percent(map.LandTiles / (float)map.TileCount)).Append("%   ")
             .Append(Strings.Get("panel.generated")).Append(' ').Append(generationMs / 1000.0, 2).Append(" с");
-        font.Draw(batch, _line.Span, new Vector2(x, y), DimColor, scale);
+        DrawLine(batch, font, skin, IconKind.Gear, iconX, x, y, step, UiPalette.TextMuted, scale);
+    }
+
+    /// <summary>Рисует собранную строку и её значок. Без скина значка просто не будет.</summary>
+    private void DrawLine(
+        SpriteBatch batch,
+        PixelFont font,
+        UiSkin? skin,
+        IconKind icon,
+        int iconX,
+        int textX,
+        int y,
+        int step,
+        Color color,
+        int scale)
+    {
+        if (skin != null)
+        {
+            skin.Icon(batch, icon, iconX, y + ((step - IconAtlas.IconSize) / 2), 1);
+        }
+
+        font.Draw(batch, _line.Span, new Vector2(textX, y), color, scale);
     }
 
     private static int Percent(float value) => (int)MathF.Round(Math.Clamp(value, 0f, 1f) * 100f);
