@@ -119,7 +119,7 @@ public sealed class TradeNetwork
         }
 
         Good[route] = good;
-        Volume[route] = amount;
+        Volume[route] += amount;
         Total[route] += amount;
     }
 
