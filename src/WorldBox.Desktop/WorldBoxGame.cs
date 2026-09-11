@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using WorldBox.Core;
 using WorldBox.Core.Diagnostics;
+using WorldBox.Core.Eras;
 using WorldBox.Core.People;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Time;
@@ -18,8 +19,9 @@ namespace WorldBox.Desktop;
 /// <summary>
 /// Окно и игровой цикл. Сейчас здесь: живая карта мира (биомы, реки, ресурсы),
 /// шесть режимов карты, мини-карта, легенда, ближний план спрайтами 16x16,
-/// жители, которые едят, кочуют, рожают и умирают, а также племена со своими
-/// поселениями и границами.
+/// жители, которые едят, кочуют, рожают и умирают, племена со своими
+/// поселениями и границами, а также развитие народов по эпохам:
+/// от каменного века до космоса, вместе со сжатием времени и панелью народов.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
@@ -42,8 +44,15 @@ public sealed class WorldBoxGame : Game
     private readonly DebugOverlay _overlay = new DebugOverlay();
     private readonly TileInspector _inspector = new TileInspector();
     private readonly BiomeLegend _legend = new BiomeLegend();
+    private readonly TribePanel _tribePanel = new TribePanel();
     private readonly PeopleRenderer _peopleRenderer = new PeopleRenderer();
     private readonly int _size;
+
+    /// <summary>Таблица эпох из data/eras.json. Читается один раз на запуск игры.</summary>
+    private readonly EraTable? _eraTable;
+
+    /// <summary>Почему таблица эпох не прочиталась. Пустая строка, если всё хорошо.</summary>
+    private readonly string _eraError;
 
     private WorldState _world = null!;
     private SimulationLoop _loop = null!;
@@ -54,6 +63,8 @@ public sealed class WorldBoxGame : Game
     private SettlementStore _settlements = null!;
     private Territory _territory = null!;
     private SettlementSystem _settlementSystem = null!;
+    private TribeTech _tech = null!;
+    private EraSystem? _eraSystem;
     private SpriteBatch _batch = null!;
     private Primitives _primitives = null!;
     private PixelFont _font = null!;
@@ -88,6 +99,10 @@ public sealed class WorldBoxGame : Game
         IsMouseVisible = true;
         Content.RootDirectory = "Content";
 
+        // Таблица эпох нужна раньше первого мира: по ней собирается цикл симуляции.
+        _eraTable = EraTable.Load(out string eraError);
+        _eraError = eraError;
+
         GenerateWorld(seed);
     }
 
@@ -96,6 +111,13 @@ public sealed class WorldBoxGame : Game
         Strings.Load();
         Window.Title = Strings.Get("app.title");
         Window.AllowUserResizing = true;
+
+        // Без таблицы эпох игра работает, но народы застревают в каменном веке.
+        // Молча это прятать нельзя, поэтому пишем причину в консоль.
+        if (_eraError.Length > 0)
+        {
+            Console.Error.WriteLine(_eraError);
+        }
 
         // Камера создаётся раньше подписки: событие смены размера трогает камеру.
         _camera = new Camera2D(_world.Width, _world.Height, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
@@ -184,6 +206,12 @@ public sealed class WorldBoxGame : Game
         if (_input.WasPressed(Keys.F5))
         {
             _peopleVisible = !_peopleVisible;
+        }
+
+        if (_input.WasPressed(Keys.E))
+        {
+            // Панель народов: кто где живёт и что мешает шагнуть в следующую эпоху.
+            _tribePanel.Visible = !_tribePanel.Visible;
         }
 
         if (_input.WasPressed(Keys.T))
@@ -380,6 +408,14 @@ public sealed class WorldBoxGame : Game
         bool inside = _world.InBounds(cursorX, cursorY);
         short largest = _tribes.Largest();
 
+        // В шапке показываем эпоху самого развитого народа: по ней же считается сжатие времени.
+        string? eraName = null;
+        if (_eraTable != null)
+        {
+            int topEra = _eraSystem != null ? _eraSystem.TopEra : 0;
+            eraName = Strings.Get(_eraTable.NameKeyOf(topEra));
+        }
+
         var info = new OverlayInfo
         {
             Fps = _fpsStats.PerSecond,
@@ -388,6 +424,8 @@ public sealed class WorldBoxGame : Game
             SimMs = _simStats.Average,
             Ticks = _world.Tick,
             Year = _world.Year,
+            YearsPerTick = _world.YearsPerTick,
+            EraName = eraName,
             Speed = _clock.Speed,
             IsBehind = _clock.IsBehind,
             Zoom = _camera.Zoom,
@@ -411,7 +449,23 @@ public sealed class WorldBoxGame : Game
         _overlay.Draw(_batch, _font, _primitives, in info, viewportWidth, viewportHeight);
         _legend.Draw(_batch, _font, _primitives, viewportWidth);
         _minimap?.Draw(_batch, _primitives, _camera);
-        _inspector.Draw(_batch, _font, _primitives, _map, _mode, cursorX, cursorY, inside, _generationMs, viewportHeight);
+        _tribePanel.Draw(_batch, _font, _primitives, _tribes, _tech, _eraTable, viewportWidth, viewportHeight);
+        _inspector.Draw(
+            _batch,
+            _font,
+            _primitives,
+            _map,
+            _mode,
+            cursorX,
+            cursorY,
+            inside,
+            _generationMs,
+            viewportHeight,
+            _territory,
+            _tribes,
+            _tech,
+            _eraTable,
+            _settlements);
     }
 
     private void SetMapMode(MapMode mode)
@@ -444,12 +498,25 @@ public sealed class WorldBoxGame : Game
         _tribes = new TribeStore();
         _settlements = new SettlementStore();
         _territory = new Territory(_size, _size, _tribes.Capacity);
+        _tech = new TribeTech(_tribes.Capacity);
 
         TribeSeeder.Seed(_world, _people, _tribes, _settlements, _territory, StartTribes, StartPeople / StartTribes);
 
-        _populationSystem = new PopulationSystem(_people);
+        _populationSystem = new PopulationSystem(_people, null, _tech);
         _settlementSystem = new SettlementSystem(_people, _tribes, _settlements, _territory);
-        _loop = new SimulationLoop(_world, _populationSystem, _settlementSystem);
+
+        if (_eraTable != null)
+        {
+            // Первая эпоха задаёт длину тика сразу, иначе первые десять тиков шли бы чужим шагом.
+            _world.YearsPerTick = _eraTable.YearsPerTickOf(0);
+            _eraSystem = new EraSystem(_eraTable, _tribes, _territory, _tech);
+            _loop = new SimulationLoop(_world, _populationSystem, _settlementSystem, _eraSystem);
+        }
+        else
+        {
+            _eraSystem = null;
+            _loop = new SimulationLoop(_world, _populationSystem, _settlementSystem);
+        }
 
         _clock.Reset();
         _clock.Speed = GameSpeed.X1;
