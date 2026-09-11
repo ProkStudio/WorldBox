@@ -23,9 +23,10 @@
   "hud.tribes": "племён",
   "hud.settlements": "поселений",
   "hud.largest": "крупнейшее",
+  "hud.trade": "торговля",
 
   "hint.line1": "ПКМ — карта, колесо — зум, WASD — шаг, M — режим, L — легенда, T — границы, E — народы",
-  "hint.line2": "N — новый мир, Пробел — пауза, 1-4 — скорость, Home — весь мир, F1-F6 — панели и декор, Esc — выход",
+  "hint.line2": "N — новый мир, Пробел — пауза, 1-4 — скорость, Home — весь мир, F1-F6 — панели и декор, G — торговля, Esc — выход",
 
   "speed.paused": "Пауза",
   "speed.x1": "x1",
@@ -81,6 +82,16 @@
   "panel.no_owner": "ничейная земля",
   "panel.era": "эпоха",
   "panel.settlement": "поселение",
+  "panel.market": "Торговля и цены",
+  "panel.no_market": "Таблица экономики не загружена",
+  "panel.no_trade": "Торговать пока некому",
+  "panel.wealth": "казна",
+  "panel.food": "еда",
+  "panel.routes": "путей",
+  "panel.partners": "партнёров",
+  "panel.dearest": "дорого",
+  "panel.hunger": "голод",
+  "panel.trade_flow": "перевезено за прогон",
 
   "geo.none": "нет",
   "geo.fertile": "плодородные земли",
@@ -111,6 +122,8 @@
   "biome.glacier": "Ледник",
   "biome.mountain": "Горы",
   "biome.peak": "Вершины",
+
+  "good.food": "Еда",
 
   "resource.none": "нет",
   "resource.wood": "Древесина",
