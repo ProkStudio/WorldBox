@@ -6,6 +6,7 @@ using WorldBox.Core;
 using WorldBox.Core.Diagnostics;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Time;
+using WorldBox.Core.World;
 using WorldBox.Render;
 using WorldBox.Render.Text;
 using WorldBox.UI;
@@ -13,19 +14,13 @@ using WorldBox.UI;
 namespace WorldBox.Desktop;
 
 /// <summary>
-/// Окно и игровой цикл. Срез S0: пустой мир, камера и счётчики.
-/// Рисуется сетка мира, чтобы было видно движение камеры и границы карты.
-/// Срез S1 заменит сетку настоящей картой биомов.
+/// Окно и игровой цикл. На срезе S1 здесь живая карта мира: биомы, реки, ресурсы,
+/// режимы карты, мини-карта и генерация нового мира по клавише. Жители появятся на S3.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
     private static readonly Color Background = new Color(9, 11, 14);
-    private static readonly Color WorldFill = new Color(24, 29, 38);
-    private static readonly Color CellFill = new Color(31, 38, 49);
-    private static readonly Color GridColor = new Color(255, 255, 255, 26);
-    private static readonly Color BorderColor = new Color(94, 159, 232, 160);
-
-    private const int CellTiles = 32;
+    private static readonly Color BorderColor = new Color(94, 159, 232, 150);
 
     private readonly GraphicsDeviceManager _graphics;
     private readonly InputState _input = new InputState();
@@ -35,20 +30,28 @@ public sealed class WorldBoxGame : Game
     private readonly FrameStats _simStats = new FrameStats(60);
     private readonly Stopwatch _frameWatch = new Stopwatch();
     private readonly DebugOverlay _overlay = new DebugOverlay();
-    private readonly WorldState _world;
-    private readonly SimulationLoop _loop;
+    private readonly TileInspector _inspector = new TileInspector();
+    private readonly int _size;
 
+    private WorldState _world = null!;
+    private SimulationLoop _loop = null!;
+    private WorldMap _map = null!;
     private SpriteBatch _batch = null!;
     private Primitives _primitives = null!;
     private PixelFont _font = null!;
     private Camera2D _camera = null!;
+    private TileRenderer? _tiles;
+    private Minimap? _minimap;
+
+    private MapMode _mode = MapMode.Terrain;
     private GameSpeed _speedBeforePause = GameSpeed.X1;
+    private double _generationMs;
+    private int _seed;
     private bool _resizing;
 
     public WorldBoxGame(int seed, int worldSize)
     {
-        _world = new WorldState(worldSize, worldSize, seed);
-        _loop = new SimulationLoop(_world);
+        _size = worldSize;
         _graphics = new GraphicsDeviceManager(this)
         {
             PreferredBackBufferWidth = 1600,
@@ -61,6 +64,8 @@ public sealed class WorldBoxGame : Game
         IsFixedTimeStep = false;
         IsMouseVisible = true;
         Content.RootDirectory = "Content";
+
+        GenerateWorld(seed);
     }
 
     protected override void Initialize()
@@ -78,11 +83,14 @@ public sealed class WorldBoxGame : Game
         _batch = new SpriteBatch(GraphicsDevice);
         _primitives = new Primitives(GraphicsDevice);
         _font = PixelFont.Create(GraphicsDevice);
+        RebuildGraphics();
         base.LoadContent();
     }
 
     protected override void UnloadContent()
     {
+        _tiles?.Dispose();
+        _minimap?.Dispose();
         _font.Dispose();
         _primitives.Dispose();
         _batch.Dispose();
@@ -101,6 +109,7 @@ public sealed class WorldBoxGame : Game
         _input.Update();
         HandleInput((float)deltaSeconds);
         _camera.Update((float)deltaSeconds);
+        _tiles?.Update(8);
 
         int ticks = _clock.Advance(deltaSeconds);
         if (ticks > 0)
@@ -122,14 +131,40 @@ public sealed class WorldBoxGame : Game
             return;
         }
 
+        bool shift = _input.IsDown(Keys.LeftShift) || _input.IsDown(Keys.RightShift);
+
         if (_input.WasPressed(Keys.F3))
         {
             _overlay.Visible = !_overlay.Visible;
         }
 
+        if (_input.WasPressed(Keys.F2))
+        {
+            _inspector.Visible = !_inspector.Visible;
+        }
+
         if (_input.WasPressed(Keys.F1))
         {
             _overlay.HintVisible = !_overlay.HintVisible;
+        }
+
+        if (_input.WasPressed(Keys.M))
+        {
+            SetMapMode(shift ? MapModes.Previous(_mode) : MapModes.Next(_mode));
+        }
+
+        if (_input.WasPressed(Keys.N))
+        {
+            // Следующий сид считается из текущего, часы не участвуют: цепочка миров повторима.
+            GenerateWorld(unchecked((_seed * 1664525) + 1013904223));
+            RebuildGraphics();
+            _camera.FitToWorld();
+        }
+
+        if (_input.WasPressed(Keys.R))
+        {
+            GenerateWorld(_seed);
+            RebuildGraphics();
         }
 
         if (_input.WasPressed(Keys.Space))
@@ -170,6 +205,11 @@ public sealed class WorldBoxGame : Game
             _camera.FitToWorld();
         }
 
+        if (_input.LeftPressed && _minimap != null && _minimap.TryPick(_input.MousePosition, out Vector2 target))
+        {
+            _camera.Position = target;
+        }
+
         if (_input.RightDown || _input.MiddleDown)
         {
             Vector2 delta = _input.MouseDelta;
@@ -187,7 +227,7 @@ public sealed class WorldBoxGame : Game
 
         // Скорость сдвига клавишами одинакова в пикселях экрана на любом зуме.
         float tilesPerSecond = 900f / MathF.Max(_camera.Zoom, 0.0001f);
-        if (_input.IsDown(Keys.LeftShift) || _input.IsDown(Keys.RightShift))
+        if (shift)
         {
             tilesPerSecond *= 2.5f;
         }
@@ -225,11 +265,12 @@ public sealed class WorldBoxGame : Game
         GraphicsDevice.Clear(Background);
 
         _batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, null, null, null, _camera.View);
-        DrawWorldPlaceholder();
+        _tiles?.Draw(_batch, _camera);
+        DrawWorldBorder();
         _batch.End();
 
         _batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp);
-        DrawOverlay();
+        DrawInterface();
         _batch.End();
 
         base.Draw(gameTime);
@@ -238,63 +279,26 @@ public sealed class WorldBoxGame : Game
         _frameStats.Add(_frameWatch.Elapsed.TotalMilliseconds);
     }
 
-    private void DrawWorldPlaceholder()
+    private void DrawWorldBorder()
     {
-        _primitives.FillRect(_batch, new Rectangle(0, 0, _world.Width, _world.Height), WorldFill);
+        float thickness = MathF.Max(1f / _camera.Zoom, 0.4f);
+        var topLeft = Vector2.Zero;
+        var topRight = new Vector2(_map.Width, 0);
+        var bottomLeft = new Vector2(0, _map.Height);
+        var bottomRight = new Vector2(_map.Width, _map.Height);
 
-        _camera.VisibleTiles(out int minX, out int minY, out int maxX, out int maxY);
-        int firstCellX = minX / CellTiles;
-        int firstCellY = minY / CellTiles;
-        int lastCellX = maxX / CellTiles;
-        int lastCellY = maxY / CellTiles;
-
-        for (int cellY = firstCellY; cellY <= lastCellY; cellY++)
-        {
-            for (int cellX = firstCellX; cellX <= lastCellX; cellX++)
-            {
-                if (((cellX + cellY) & 1) == 0)
-                {
-                    continue;
-                }
-
-                int x = cellX * CellTiles;
-                int y = cellY * CellTiles;
-                int width = Math.Min(CellTiles, _world.Width - x);
-                int height = Math.Min(CellTiles, _world.Height - y);
-                if (width > 0 && height > 0)
-                {
-                    _primitives.FillRect(_batch, new Rectangle(x, y, width, height), CellFill);
-                }
-            }
-        }
-
-        // Сетка появляется только вблизи, чтобы не рябило на общем плане.
-        if (_camera.Zoom >= 6f)
-        {
-            float thickness = 1f / _camera.Zoom;
-            for (int x = minX; x <= maxX; x++)
-            {
-                _primitives.Line(_batch, new Vector2(x, minY), new Vector2(x, maxY + 1), GridColor, thickness);
-            }
-
-            for (int y = minY; y <= maxY; y++)
-            {
-                _primitives.Line(_batch, new Vector2(minX, y), new Vector2(maxX + 1, y), GridColor, thickness);
-            }
-        }
-
-        float borderThickness = MathF.Max(1f / _camera.Zoom, 0.5f);
-        _primitives.Line(_batch, Vector2.Zero, new Vector2(_world.Width, 0), BorderColor, borderThickness);
-        _primitives.Line(_batch, new Vector2(0, _world.Height), new Vector2(_world.Width, _world.Height), BorderColor, borderThickness);
-        _primitives.Line(_batch, Vector2.Zero, new Vector2(0, _world.Height), BorderColor, borderThickness);
-        _primitives.Line(_batch, new Vector2(_world.Width, 0), new Vector2(_world.Width, _world.Height), BorderColor, borderThickness);
+        _primitives.Line(_batch, topLeft, topRight, BorderColor, thickness);
+        _primitives.Line(_batch, bottomLeft, bottomRight, BorderColor, thickness);
+        _primitives.Line(_batch, topLeft, bottomLeft, BorderColor, thickness);
+        _primitives.Line(_batch, topRight, bottomRight, BorderColor, thickness);
     }
 
-    private void DrawOverlay()
+    private void DrawInterface()
     {
         Vector2 cursorWorld = _camera.ScreenToWorld(_input.MousePosition);
         int cursorX = (int)MathF.Floor(cursorWorld.X);
         int cursorY = (int)MathF.Floor(cursorWorld.Y);
+        bool inside = _world.InBounds(cursorX, cursorY);
 
         var info = new OverlayInfo
         {
@@ -310,12 +314,58 @@ public sealed class WorldBoxGame : Game
             VisibleTiles = _camera.TilesOnScreenVertically,
             CursorX = cursorX,
             CursorY = cursorY,
-            CursorInside = _world.InBounds(cursorX, cursorY),
+            CursorInside = inside,
             WorldWidth = _world.Width,
             WorldHeight = _world.Height,
         };
 
-        _overlay.Draw(_batch, _font, _primitives, in info, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        int viewportWidth = GraphicsDevice.Viewport.Width;
+        int viewportHeight = GraphicsDevice.Viewport.Height;
+
+        _overlay.Draw(_batch, _font, _primitives, in info, viewportWidth, viewportHeight);
+        _minimap?.Draw(_batch, _primitives, _camera);
+        _inspector.Draw(_batch, _font, _primitives, _map, _mode, cursorX, cursorY, inside, _generationMs, viewportHeight);
+    }
+
+    private void SetMapMode(MapMode mode)
+    {
+        _mode = mode;
+        if (_tiles != null)
+        {
+            _tiles.Mode = mode;
+        }
+
+        _minimap?.Rebuild(mode);
+    }
+
+    /// <summary>Считает новую карту и начинает партию заново. Графика здесь не трогается.</summary>
+    private void GenerateWorld(int seed)
+    {
+        var watch = Stopwatch.StartNew();
+        WorldMap map = WorldGenerator.Generate(_size, _size, seed);
+        watch.Stop();
+
+        _map = map;
+        _seed = seed;
+        _generationMs = watch.Elapsed.TotalMilliseconds;
+        _world = new WorldState(_size, _size, seed);
+        _world.SetMap(map);
+        _loop = new SimulationLoop(_world);
+        _clock.Reset();
+        _simStats.Clear();
+    }
+
+    private void RebuildGraphics()
+    {
+        _tiles?.Dispose();
+        _tiles = new TileRenderer(GraphicsDevice, _map);
+        _tiles.Mode = _mode;
+        _tiles.BuildAll();
+
+        _minimap?.Dispose();
+        _minimap = new Minimap(GraphicsDevice, _map);
+        _minimap.Rebuild(_mode);
+        _minimap.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
     }
 
     private void OnClientSizeChanged(object? sender, EventArgs e)
@@ -330,6 +380,7 @@ public sealed class WorldBoxGame : Game
         _graphics.PreferredBackBufferHeight = Math.Max(450, Window.ClientBounds.Height);
         _graphics.ApplyChanges();
         _camera.SetViewport(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        _minimap?.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
         _resizing = false;
     }
 }
