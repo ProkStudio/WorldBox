@@ -26,6 +26,12 @@ public struct OverlayInfo
     public int Tribes;
     public int Settlements;
 
+    /// <summary>Сколько игровых лет сейчас в одном тике. Меняется вместе с эпохой.</summary>
+    public float YearsPerTick;
+
     /// <summary>Имя самого многолюдного народа. Ссылка на готовую строку, новых строк за кадр нет.</summary>
     public string? LargestTribe;
+
+    /// <summary>Имя самой передовой эпохи мира. null — таблица эпох не загружена, строка не рисуется.</summary>
+    public string? EraName;
 }
