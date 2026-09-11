@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using WorldBox.Core;
 using WorldBox.Core.Diagnostics;
+using WorldBox.Core.People;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Time;
 using WorldBox.Core.World;
@@ -14,12 +15,15 @@ using WorldBox.UI;
 namespace WorldBox.Desktop;
 
 /// <summary>
-/// Окно и игровой цикл. На срезе S1 здесь живая карта мира: биомы, реки, ресурсы,
-/// режимы карты, мини-карта, легенда и генерация нового мира по клавише. На S2 добавлен
-/// ближний план со спрайтами 16x16. Жители появятся на S3.
+/// Окно и игровой цикл. Сейчас здесь: живая карта мира (биомы, реки, ресурсы),
+/// шесть режимов карты, мини-карта, легенда, ближний план спрайтами 16x16
+/// и первые жители, которые едят, кочуют, рожают и умирают.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
+    /// <summary>Сколько людей селится на старте партии.</summary>
+    private const int StartPeople = 400;
+
     private static readonly Color Background = new Color(9, 11, 14);
     private static readonly Color BorderColor = new Color(94, 159, 232, 150);
 
@@ -33,11 +37,14 @@ public sealed class WorldBoxGame : Game
     private readonly DebugOverlay _overlay = new DebugOverlay();
     private readonly TileInspector _inspector = new TileInspector();
     private readonly BiomeLegend _legend = new BiomeLegend();
+    private readonly PeopleRenderer _peopleRenderer = new PeopleRenderer();
     private readonly int _size;
 
     private WorldState _world = null!;
     private SimulationLoop _loop = null!;
     private WorldMap _map = null!;
+    private Population _people = null!;
+    private PopulationSystem _populationSystem = null!;
     private SpriteBatch _batch = null!;
     private Primitives _primitives = null!;
     private PixelFont _font = null!;
@@ -52,6 +59,7 @@ public sealed class WorldBoxGame : Game
     private int _seed;
     private bool _resizing;
     private bool _detailTiles = true;
+    private bool _peopleVisible = true;
 
     public WorldBoxGame(int seed, int worldSize)
     {
@@ -159,6 +167,11 @@ public sealed class WorldBoxGame : Game
         {
             // Аварийный выключатель ближнего плана: полезен при замерах и на слабом железе.
             _detailTiles = !_detailTiles;
+        }
+
+        if (_input.WasPressed(Keys.F5))
+        {
+            _peopleVisible = !_peopleVisible;
         }
 
         if (_input.WasPressed(Keys.L))
@@ -311,10 +324,16 @@ public sealed class WorldBoxGame : Game
         if (detail)
         {
             _sprites!.Draw(_batch, _camera, seconds);
-            return;
+        }
+        else
+        {
+            _tiles?.Draw(_batch, _camera);
         }
 
-        _tiles?.Draw(_batch, _camera);
+        if (_peopleVisible)
+        {
+            _peopleRenderer.Draw(_batch, _primitives, _camera, _people);
+        }
     }
 
     private void DrawWorldBorder()
@@ -378,7 +397,7 @@ public sealed class WorldBoxGame : Game
         _legend.Rebuild(_map, mode);
     }
 
-    /// <summary>Считает новую карту и начинает партию заново. Графика здесь не трогается.</summary>
+    /// <summary>Считает новую карту, селит людей и начинает партию заново. Графика здесь не трогается.</summary>
     private void GenerateWorld(int seed)
     {
         var watch = Stopwatch.StartNew();
@@ -388,10 +407,19 @@ public sealed class WorldBoxGame : Game
         _map = map;
         _seed = seed;
         _generationMs = watch.Elapsed.TotalMilliseconds;
+
         _world = new WorldState(_size, _size, seed);
         _world.SetMap(map);
-        _loop = new SimulationLoop(_world);
+
+        _people = new Population(Population.DefaultCapacity, _size, _size);
+        PopulationSeeder.Seed(_world, _people, StartPeople);
+
+        _populationSystem = new PopulationSystem(_people);
+        _loop = new SimulationLoop(_world, _populationSystem);
+
         _clock.Reset();
+        _clock.Speed = GameSpeed.X1;
+        _speedBeforePause = GameSpeed.X1;
         _simStats.Clear();
     }
 
