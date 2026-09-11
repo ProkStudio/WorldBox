@@ -33,7 +33,7 @@ public sealed class ArtTests
         Assert.Equal(TileArt.TileSize, DecorArt.Size);
         Assert.Equal(TileArt.TileSize, IconArt.Size);
         Assert.Equal(3, DecorArt.Variants);
-        Assert.Equal(28, IconArt.KindCount);
+        Assert.Equal(29, IconArt.KindCount);
     }
 
     [Fact]

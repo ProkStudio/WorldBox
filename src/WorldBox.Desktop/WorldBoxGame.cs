@@ -12,6 +12,7 @@ using WorldBox.Core.Roads;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Time;
 using WorldBox.Core.Tribes;
+using WorldBox.Core.War;
 using WorldBox.Core.World;
 using WorldBox.Render;
 using WorldBox.Render.Text;
@@ -25,8 +26,8 @@ namespace WorldBox.Desktop;
 /// с растительностью и постройками, жители, которые едят, кочуют, рожают и умирают,
 /// племена со своими поселениями и границами, развитие народов по эпохам —
 /// от каменного века до космоса — хозяйство со складами, ценами, голодом и торговыми
-/// путями, и оболочка в едином скине: нижняя панель инструментов, значки,
-/// круглые панели и таблички городов.
+/// путями, война с отрядами, осадами, взятием городов и бунтами, и оболочка в едином
+/// скине: нижняя панель инструментов, значки, круглые панели и таблички городов.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
@@ -54,8 +55,10 @@ public sealed class WorldBoxGame : Game
     private readonly BiomeLegend _legend = new BiomeLegend();
     private readonly TribePanel _tribePanel = new TribePanel();
     private readonly MarketPanel _marketPanel = new MarketPanel();
+    private readonly WarPanel _warPanel = new WarPanel();
     private readonly PeopleRenderer _peopleRenderer = new PeopleRenderer();
     private readonly TradeRenderer _tradeRenderer = new TradeRenderer { Visible = false };
+    private readonly ArmyRenderer _armyRenderer = new ArmyRenderer();
     private readonly TrafficRenderer _traffic = new TrafficRenderer();
     private readonly Toolbar _toolbar = new Toolbar();
     private readonly NamePlates _plates = new NamePlates();
@@ -72,6 +75,12 @@ public sealed class WorldBoxGame : Game
 
     /// <summary>Почему таблица хозяйства не прочиталась. Пустая строка, если всё хорошо.</summary>
     private readonly string _economyError;
+
+    /// <summary>Таблица войны из data/war.json. Читается один раз на запуск игры.</summary>
+    private readonly WarTable? _warTable;
+
+    /// <summary>Почему таблица войны не прочиталась. Пустая строка, если всё хорошо.</summary>
+    private readonly string _warError;
 
     private WorldState _world = null!;
     private SimulationLoop _loop = null!;
@@ -90,6 +99,9 @@ public sealed class WorldBoxGame : Game
     private TribeMarket? _market;
     private TradeNetwork? _routes;
     private EconomySystem? _economySystem;
+    private Diplomacy _diplomacy = null!;
+    private ArmyStore? _armies;
+    private WarSystem? _warSystem;
     private SpriteBatch _batch = null!;
     private Primitives _primitives = null!;
     private PixelFont _font = null!;
@@ -114,6 +126,7 @@ public sealed class WorldBoxGame : Game
     private bool _bordersVisible = true;
     private bool _decorVisible = true;
     private bool _roadsVisible = true;
+    private bool _armiesVisible = true;
 
     /// <summary>Игровое время для транспорта. На паузе не растёт, поэтому всё замирает вместе с миром.</summary>
     private float _trafficSeconds;
@@ -144,6 +157,9 @@ public sealed class WorldBoxGame : Game
         _economyTable = EconomyTable.Load(out string economyError);
         _economyError = economyError;
 
+        _warTable = WarTable.Load(out string warError);
+        _warError = warError;
+
         GenerateWorld(seed);
     }
 
@@ -164,6 +180,12 @@ public sealed class WorldBoxGame : Game
         if (_economyError.Length > 0)
         {
             Console.Error.WriteLine(_economyError);
+        }
+
+        // И то же с войной: без таблицы войны народы никогда не поднимут войско.
+        if (_warError.Length > 0)
+        {
+            Console.Error.WriteLine(_warError);
         }
 
         // Камера создаётся раньше подписки: событие смены размера трогает камеру.
@@ -299,6 +321,12 @@ public sealed class WorldBoxGame : Game
             _roadsVisible = !_roadsVisible;
         }
 
+        if (_input.WasPressed(Keys.F9))
+        {
+            // Выключатель войск: нужен, чтобы честно сравнить кадр с войной и без неё.
+            _armiesVisible = !_armiesVisible;
+        }
+
         if (_input.WasPressed(Keys.E))
         {
             // Панель народов: кто где живёт и что мешает шагнуть в следующую эпоху.
@@ -308,6 +336,12 @@ public sealed class WorldBoxGame : Game
         if (_input.WasPressed(Keys.G))
         {
             ToggleMarket();
+        }
+
+        if (_input.WasPressed(Keys.V))
+        {
+            // Окно войны: кто с кем воюет, сколько войск и что война сделала с картой.
+            _warPanel.Visible = !_warPanel.Visible;
         }
 
         if (_input.WasPressed(Keys.T))
@@ -473,6 +507,9 @@ public sealed class WorldBoxGame : Game
             case ToolbarAction.ToggleMarket:
                 ToggleMarket();
                 break;
+            case ToolbarAction.ToggleWar:
+                _warPanel.Visible = !_warPanel.Visible;
+                break;
             case ToolbarAction.ToggleLegend:
                 _legend.Visible = !_legend.Visible;
                 break;
@@ -628,6 +665,12 @@ public sealed class WorldBoxGame : Game
         {
             _peopleRenderer.Draw(_batch, _primitives, _camera, _people);
         }
+
+        // Войска рисуются последними: знамя должно читаться поверх домов, людей и дорог.
+        if (_armiesVisible && _armies != null)
+        {
+            _armyRenderer.Draw(_batch, _primitives, _camera, _armies, _settlements, _tribes, (float)seconds);
+        }
     }
 
     private void DrawWorldBorder()
@@ -685,6 +728,9 @@ public sealed class WorldBoxGame : Game
             Tribes = _tribes.Count,
             Settlements = _settlements.Count,
             LargestTribe = _tribes.NameOf(largest),
+            Wars = _warSystem != null ? _warSystem.ActiveWars : 0,
+            Armies = _armies != null ? _armies.Count : 0,
+            Sieges = CountSieges(),
         };
 
         if (_frameReportRequested)
@@ -706,6 +752,23 @@ public sealed class WorldBoxGame : Game
         // Окно торговли встаёт ровно под статистикой, а без неё — в самый верх.
         _marketPanel.TopMargin = _overlay.Bounds.Height > 0 ? _overlay.Bounds.Bottom + PanelGap : 14;
         _marketPanel.Draw(_batch, _font, _primitives, _tribes, _market, _economyTable, _routes, viewportHeight, _ui);
+
+        // Окно войны встаёт под торговым, а без него — на его место: панели не наезжают друг на друга.
+        _warPanel.TopMargin = _marketPanel.Bounds.Height > 0
+            ? _marketPanel.Bounds.Bottom + PanelGap
+            : _marketPanel.TopMargin;
+        _warPanel.Draw(
+            _batch,
+            _font,
+            _primitives,
+            _tribes,
+            _armies,
+            _diplomacy,
+            _settlements,
+            _warSystem,
+            _world.YearsPerTick,
+            viewportHeight,
+            _ui);
 
         // Панель народов ставится над мини-картой, иначе они перекрывают друг друга.
         _tribePanel.BottomMargin = _minimap != null
@@ -738,6 +801,7 @@ public sealed class WorldBoxGame : Game
             _mode,
             _tribePanel.Visible,
             _marketPanel.Visible,
+            _warPanel.Visible,
             _legend.Visible,
             _bordersVisible,
             _inspector.Visible);
@@ -787,12 +851,15 @@ public sealed class WorldBoxGame : Game
         _roads = new RoadNetwork(_size, _size);
         _roadSystem = new RoadSystem(_tribes, _settlements, _roads);
 
+        // Дипломатия нужна раньше хозяйства: между воюющими народами караваны не ходят.
+        _diplomacy = new Diplomacy(_tribes.Capacity);
+
         // Хозяйство собирается раньше эпох: торговые ресурсы нужны самому первому переходу.
         if (_economyTable != null)
         {
             _market = new TribeMarket(_tribes.Capacity, _economyTable.Count);
             _routes = new TradeNetwork(_economyTable.Trade.MaxRoutes);
-            _economySystem = new EconomySystem(_economyTable, _tribes, _settlements, _territory, _market, _routes);
+            _economySystem = new EconomySystem(_economyTable, _tribes, _settlements, _territory, _market, _routes, _diplomacy);
         }
         else
         {
@@ -810,6 +877,27 @@ public sealed class WorldBoxGame : Game
         else
         {
             _eraSystem = null;
+        }
+
+        // Война собирается последней: ей нужны и народы, и земли, и амбары городов.
+        if (_warTable != null)
+        {
+            _armies = new ArmyStore(_warTable.Armies.MaxArmies);
+            _warSystem = new WarSystem(
+                _warTable,
+                _eraTable,
+                _people,
+                _tribes,
+                _settlements,
+                _territory,
+                _armies,
+                _diplomacy,
+                _market);
+        }
+        else
+        {
+            _armies = null;
+            _warSystem = null;
         }
 
         _loop = BuildLoop();
@@ -854,11 +942,18 @@ public sealed class WorldBoxGame : Game
             .Append(", тайлов полотна ").Append(_roads.Tiles)
             .Append(", транспорта в кадре ").Append(_traffic.DrawnVehicles)
             .Append(", самолётов ").AppendLine(_traffic.DrawnPlanes.ToString());
+        text.Append("война: войн ").Append(_warSystem != null ? _warSystem.ActiveWars : 0)
+            .Append(", отрядов ").Append(_armies != null ? _armies.Count : 0)
+            .Append(", знамён в кадре ").Append(_armyRenderer.DrawnArmies)
+            .Append(", осад в кадре ").Append(_armyRenderer.DrawnSieges)
+            .Append(", битв всего ").Append(_warSystem != null ? _warSystem.TotalBattles : 0)
+            .Append(", городов взято ").AppendLine((_warSystem != null ? _warSystem.TotalCaptures : 0).ToString());
         text.Append("слои: ближний план ").Append(OnOff(_detailTiles))
             .Append(", люди ").Append(OnOff(_peopleVisible))
             .Append(", декор ").Append(OnOff(_decorVisible))
             .Append(", границы ").Append(OnOff(_bordersVisible))
             .Append(", дороги ").Append(OnOff(_roadsVisible))
+            .Append(", войска ").Append(OnOff(_armiesVisible))
             .Append(", торговые пути ").Append(OnOff(_tradeRenderer.Visible))
             .Append(", панель народов ").Append(OnOff(_tribePanel.Visible))
             .Append(", легенда ").AppendLine(OnOff(_legend.Visible));
@@ -887,6 +982,21 @@ public sealed class WorldBoxGame : Game
     /// <summary>Короткая пометка для отчёта: включён слой или нет.</summary>
     private static string OnOff(bool value) => value ? "да" : "нет";
 
+    /// <summary>Сколько городов сейчас в осаде. Один проход по списку поселений за кадр.</summary>
+    private int CountSieges()
+    {
+        int count = 0;
+        for (int i = 0; i < _settlements.HighWater; i++)
+        {
+            if (_settlements.Alive[i] && _settlements.Siege[i] > 0f)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     /// <summary>
     /// Собирает цикл из того, что удалось загрузить: без таблиц игра всё равно живая.
     /// Порядок важен: люди и поселения раньше земель, земли раньше хозяйства и эпох,
@@ -910,6 +1020,12 @@ public sealed class WorldBoxGame : Game
         if (_eraSystem != null)
         {
             systems.Add(_eraSystem);
+        }
+
+        // Война идёт последней в тике: она смотрит на уже обновлённые границы, амбары и эпохи.
+        if (_warSystem != null)
+        {
+            systems.Add(_warSystem);
         }
 
         return new SimulationLoop(_world, systems.ToArray());

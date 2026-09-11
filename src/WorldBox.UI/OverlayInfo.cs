@@ -26,6 +26,15 @@ public struct OverlayInfo
     public int Tribes;
     public int Settlements;
 
+    /// <summary>Сколько войн идёт сейчас.</summary>
+    public int Wars;
+
+    /// <summary>Сколько отрядов на карте сейчас.</summary>
+    public int Armies;
+
+    /// <summary>Сколько городов сейчас в осаде.</summary>
+    public int Sieges;
+
     /// <summary>Сколько игровых лет сейчас в одном тике. Меняется вместе с эпохой.</summary>
     public float YearsPerTick;
 

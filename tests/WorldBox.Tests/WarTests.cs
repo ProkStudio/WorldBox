@@ -313,6 +313,76 @@ public sealed class WarTests
     }
 
     /// <summary>Сплошная суша: проверки боя и осады не должны зависеть от случайной географии.</summary>
+    /// <summary>
+    /// Критерий среза: две сотни отрядов живут одновременно, каждый в своём месте,
+    /// люди не теряются и не двоятся, а после роспуска склад снова пуст.
+    /// Без этого замер «200 армий без просадки» нечего и ставить.
+    /// </summary>
+    [Fact]
+    public void ArmyStoreHoldsTwoHundredArmiesAtOnce()
+    {
+        const int wanted = 200;
+
+        WarTable table = LoadWar();
+        Assert.True(
+            table.Armies.MaxArmies >= wanted,
+            "В data/war.json мест под отряды меньше двухсот: " + table.Armies.MaxArmies);
+
+        var armies = new ArmyStore(table.Armies.MaxArmies);
+        var taken = new bool[armies.Capacity];
+        int expectedMen = 0;
+
+        for (int i = 0; i < wanted; i++)
+        {
+            short tribe = (short)((i % 7) + 1);
+            int men = 30 + (i % 21);
+            int slot = armies.Raise(i % 64, i / 8, tribe, men, 0.4f + ((i % 6) * 0.1f));
+
+            Assert.True(slot >= 0, "Отряд номер " + i + " не получил места на складе");
+            Assert.False(taken[slot], "Место " + slot + " выдали двум отрядам сразу");
+            taken[slot] = true;
+            expectedMen += men;
+        }
+
+        Assert.Equal(wanted, armies.Count);
+        Assert.True(armies.HighWater >= wanted, "Граница обхода меньше числа отрядов: " + armies.HighWater);
+
+        int alive = 0;
+        int menInStore = 0;
+        for (int i = 0; i < armies.HighWater; i++)
+        {
+            if (armies.Alive[i])
+            {
+                alive++;
+                menInStore += armies.Men[i];
+            }
+        }
+
+        Assert.Equal(wanted, alive);
+        Assert.Equal(expectedMen, menInStore);
+
+        // Те же числа — тот же склад: без этого война перестала бы быть повторимой.
+        var twin = new ArmyStore(table.Armies.MaxArmies);
+        for (int i = 0; i < wanted; i++)
+        {
+            twin.Raise(i % 64, i / 8, (short)((i % 7) + 1), 30 + (i % 21), 0.4f + ((i % 6) * 0.1f));
+        }
+
+        Assert.Equal(armies.Checksum(), twin.Checksum());
+
+        // Роспуск возвращает все места: следующая война начинается с чистого склада.
+        for (int i = 0; i < armies.HighWater; i++)
+        {
+            if (armies.Alive[i])
+            {
+                Assert.True(armies.Disband(i), "Отряд в месте " + i + " не распустился");
+            }
+        }
+
+        Assert.Equal(0, armies.Count);
+        Assert.True(armies.HasRoom, "После роспуска на складе снова должно быть место");
+    }
+
     private static WorldState FlatWorld(int size, int seed)
     {
         var map = new WorldMap(size, size);

@@ -78,6 +78,12 @@ public sealed class DebugOverlay
             lines++;
         }
 
+        // Строка войны появляется только когда войны или войска есть: в мирное время она лишняя.
+        if (info.Wars > 0 || info.Armies > 0)
+        {
+            lines++;
+        }
+
         if (info.IsBehind)
         {
             lines++;
@@ -138,6 +144,17 @@ public sealed class DebugOverlay
 
         DrawLine(batch, font, skin, IconKind.Settlement, iconX, textX, y, step, UiPalette.Good, scale);
         y += step;
+
+        // Война видна в шапке только когда она идёт: в мирное время пустые нули только мешают.
+        if (info.Wars > 0 || info.Armies > 0)
+        {
+            _line.Clear()
+                .Append(Strings.Get("hud.wars")).Append(' ').Append(info.Wars)
+                .Append("   ").Append(Strings.Get("hud.armies")).Append(' ').Append(info.Armies)
+                .Append("   ").Append(Strings.Get("hud.sieges")).Append(' ').Append(info.Sieges);
+            DrawLine(batch, font, skin, IconKind.War, iconX, textX, y, step, UiPalette.Bad, scale);
+            y += step;
+        }
 
         _line.Clear()
             .Append(Strings.Get("hud.zoom")).Append(' ').Append(info.Zoom, 2).Append(' ').Append(Strings.Get("hud.px"))

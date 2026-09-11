@@ -31,6 +31,7 @@ public enum IconKind : byte
     Warning,
     Star,
     Gear,
+    War,
 }
 
 /// <summary>
@@ -45,7 +46,7 @@ public static class IconArt
     public const int Slots = 5;
 
     /// <summary>Сколько значков описано, включая пустой.</summary>
-    public static int KindCount => 28;
+    public static int KindCount => 29;
 
     private static readonly ArtColor Ink = ArtColor.Rgb(14, 18, 26);
     private static readonly ArtColor Paper = ArtColor.Rgb(230, 236, 245);
@@ -83,6 +84,7 @@ public static class IconArt
             IconKind.Warning => Pick(safe, ArtColor.Rgb(244, 196, 72), ArtColor.Rgb(60, 44, 16)),
             IconKind.Star => Pick(safe, ArtColor.Rgb(250, 214, 96), ArtColor.Rgb(255, 244, 190)),
             IconKind.Gear => Pick(safe, ArtColor.Rgb(202, 208, 218), ArtColor.Rgb(128, 138, 154)),
+            IconKind.War => Pick(safe, ArtColor.Rgb(206, 214, 226), ArtColor.Rgb(176, 92, 52)),
             _ => Pick(safe, Paper, PaperLight),
         };
     }
@@ -286,6 +288,22 @@ public static class IconArt
                 Rect(icon, 7, 12, 2, 3, 2);
                 Rect(icon, 1, 7, 3, 2, 2);
                 Rect(icon, 12, 7, 3, 2, 2);
+                break;
+            case IconKind.War:
+                // Два скрещённых клинка. Каждый в два пикселя толщиной: в один диагональ рвётся на точки.
+                for (int i = 0; i < 10; i++)
+                {
+                    Set(icon, 3 + i, 12 - i, 2);
+                    Set(icon, 4 + i, 12 - i, 2);
+                    Set(icon, 12 - i, 12 - i, 2);
+                    Set(icon, 11 - i, 12 - i, 2);
+                }
+
+                // Рукояти внизу и белые кончики сверху: понятно, где у меча какой конец.
+                Rect(icon, 2, 12, 3, 2, 4);
+                Rect(icon, 11, 12, 3, 2, 4);
+                Set(icon, 13, 3, 3);
+                Set(icon, 2, 3, 3);
                 break;
             default:
                 return;

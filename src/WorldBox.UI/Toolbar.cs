@@ -23,6 +23,7 @@ public enum ToolbarAction : byte
     MapResources,
     ToggleTribes,
     ToggleMarket,
+    ToggleWar,
     ToggleLegend,
     ToggleBorders,
     ToggleInspector,
@@ -39,6 +40,7 @@ public readonly struct ToolbarState
         MapMode mode,
         bool tribes,
         bool market,
+        bool war,
         bool legend,
         bool borders,
         bool inspector)
@@ -48,6 +50,7 @@ public readonly struct ToolbarState
         Mode = mode;
         Tribes = tribes;
         Market = market;
+        War = war;
         Legend = legend;
         Borders = borders;
         Inspector = inspector;
@@ -63,6 +66,8 @@ public readonly struct ToolbarState
     public bool Tribes { get; }
 
     public bool Market { get; }
+
+    public bool War { get; }
 
     public bool Legend { get; }
 
@@ -102,6 +107,7 @@ public sealed class Toolbar
 
         new ButtonDef(IconKind.Tribes, ToolbarAction.ToggleTribes, "tool.tribes", "E", 2),
         new ButtonDef(IconKind.Market, ToolbarAction.ToggleMarket, "tool.market", "G", 2),
+        new ButtonDef(IconKind.War, ToolbarAction.ToggleWar, "tool.war", "V", 2),
         new ButtonDef(IconKind.Legend, ToolbarAction.ToggleLegend, "tool.legend", "L", 2),
         new ButtonDef(IconKind.Borders, ToolbarAction.ToggleBorders, "tool.borders", "T", 2),
         new ButtonDef(IconKind.Inspect, ToolbarAction.ToggleInspector, "tool.inspector", "F2", 2),
@@ -319,6 +325,7 @@ public sealed class Toolbar
             ToolbarAction.MapResources => state.Mode == MapMode.Resources,
             ToolbarAction.ToggleTribes => state.Tribes,
             ToolbarAction.ToggleMarket => state.Market,
+            ToolbarAction.ToggleWar => state.War,
             ToolbarAction.ToggleLegend => state.Legend,
             ToolbarAction.ToggleBorders => state.Borders,
             ToolbarAction.ToggleInspector => state.Inspector,

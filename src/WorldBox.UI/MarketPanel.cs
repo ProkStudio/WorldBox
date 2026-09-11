@@ -39,6 +39,9 @@ public sealed class MarketPanel
     /// <summary>Отступ сверху. Игра опускает панель под статистику, чтобы окна не налезали.</summary>
     public int TopMargin { get; set; } = 16;
 
+    /// <summary>Куда легла панель в последнем кадре. По ней игра ставит следующее окно под этим.</summary>
+    public Rectangle Bounds { get; private set; }
+
     /// <summary>Сколько народов показано в последнем кадре.</summary>
     public int DrawnRows { get; private set; }
 
@@ -61,6 +64,7 @@ public sealed class MarketPanel
         DrawnRows = 0;
         if (!Visible)
         {
+            Bounds = Rectangle.Empty;
             return;
         }
 
