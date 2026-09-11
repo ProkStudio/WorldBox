@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "production": {
+    "foodPerFertileTile": 0.06,
+    "foodPerTile": 0.012,
+    "resourcePerTile": 0.02,
+    "settlementBonus": 0.08,
+    "eraBonus": 0.15
+  },
+  "consumption": {
+    "foodPerPerson": 0.05,
+    "goodsPerPerson": 0.004,
+    "goodsPerSettlement": 0.04
+  },
+  "storage": {
+    "perTile": 3,
+    "perSettlement": 120,
+    "spoilShare": 0.004,
+    "startFoodShare": 0.3
+  },
+  "price": {
+    "base": 10,
+    "min": 0.5,
+    "max": 40,
+    "coverTarget": 60,
+    "scarcityWeight": 1.4,
+    "smoothing": 0.25
+  },
+  "trade": {
+    "maxRoutes": 512,
+    "rangeTiles": 20,
+    "seaRangeTiles": 48,
+    "seaEra": 4,
+    "rebuildTicks": 400,
+    "flowShare": 0.12,
+    "flowCap": 40,
+    "researchBonusPerRoute": 0.06,
+    "researchBonusMax": 0.75,
+    "profitShare": 0.3
+  },
+  "goods": [
+    { "id": "food", "value": 1.0, "minEra": 0 },
+    { "id": "wood", "value": 1.2, "minEra": 0 },
+    { "id": "stone", "value": 1.4, "minEra": 1 },
+    { "id": "copper", "value": 2.5, "minEra": 2 },
+    { "id": "tin", "value": 2.8, "minEra": 2 },
+    { "id": "iron", "value": 3.2, "minEra": 3 },
+    { "id": "coal", "value": 3.0, "minEra": 5 },
+    { "id": "saltpeter", "value": 3.6, "minEra": 6 },
+    { "id": "oil", "value": 5.0, "minEra": 8 },
+    { "id": "uranium", "value": 8.0, "minEra": 9 }
+  ]
+}
