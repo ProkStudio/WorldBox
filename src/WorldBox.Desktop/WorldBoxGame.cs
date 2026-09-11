@@ -18,10 +18,11 @@ namespace WorldBox.Desktop;
 
 /// <summary>
 /// Окно и игровой цикл. Сейчас здесь: живая карта мира (биомы, реки, ресурсы),
-/// шесть режимов карты, мини-карта, легенда, ближний план спрайтами 16x16,
-/// жители, которые едят, кочуют, рожают и умирают, племена со своими
-/// поселениями и границами, а также развитие народов по эпохам:
-/// от каменного века до космоса, вместе со сжатием времени и панелью народов.
+/// шесть режимов карты, мини-карта, легенда, ближний план спрайтами 16x16
+/// с растительностью и постройками, жители, которые едят, кочуют, рожают и умирают,
+/// племена со своими поселениями и границами, развитие народов по эпохам —
+/// от каменного века до космоса — и оболочка: нижняя панель инструментов,
+/// значки и таблички городов.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
@@ -46,6 +47,8 @@ public sealed class WorldBoxGame : Game
     private readonly BiomeLegend _legend = new BiomeLegend();
     private readonly TribePanel _tribePanel = new TribePanel();
     private readonly PeopleRenderer _peopleRenderer = new PeopleRenderer();
+    private readonly Toolbar _toolbar = new Toolbar();
+    private readonly NamePlates _plates = new NamePlates();
     private readonly int _size;
 
     /// <summary>Таблица эпох из data/eras.json. Читается один раз на запуск игры.</summary>
@@ -69,8 +72,12 @@ public sealed class WorldBoxGame : Game
     private Primitives _primitives = null!;
     private PixelFont _font = null!;
     private Camera2D _camera = null!;
+    private UiSkin _ui = null!;
+    private DecorAtlas _decorAtlas = null!;
+    private SettlementRenderer _buildings = null!;
     private TileRenderer? _tiles;
     private TileSpriteRenderer? _sprites;
+    private DecorRenderer? _decor;
     private TerritoryRenderer? _borders;
     private Minimap? _minimap;
 
@@ -82,6 +89,10 @@ public sealed class WorldBoxGame : Game
     private bool _detailTiles = true;
     private bool _peopleVisible = true;
     private bool _bordersVisible = true;
+    private bool _decorVisible = true;
+
+    /// <summary>Панель торговли ещё не собрана, но кнопка уже помнит своё состояние.</summary>
+    private bool _marketVisible;
 
     public WorldBoxGame(int seed, int worldSize)
     {
@@ -130,6 +141,12 @@ public sealed class WorldBoxGame : Game
         _batch = new SpriteBatch(GraphicsDevice);
         _primitives = new Primitives(GraphicsDevice);
         _font = PixelFont.Create(GraphicsDevice);
+
+        // Атласы интерфейса и декора от мира не зависят и собираются один раз.
+        _ui = new UiSkin(GraphicsDevice);
+        _decorAtlas = new DecorAtlas(GraphicsDevice);
+        _buildings = new SettlementRenderer(_decorAtlas);
+
         RebuildGraphics();
         base.LoadContent();
     }
@@ -138,8 +155,11 @@ public sealed class WorldBoxGame : Game
     {
         _tiles?.Dispose();
         _sprites?.Dispose();
+        _decor?.Dispose();
         _borders?.Dispose();
         _minimap?.Dispose();
+        _decorAtlas.Dispose();
+        _ui.Dispose();
         _font.Dispose();
         _primitives.Dispose();
         _batch.Dispose();
@@ -182,6 +202,13 @@ public sealed class WorldBoxGame : Game
 
         bool shift = _input.IsDown(Keys.LeftShift) || _input.IsDown(Keys.RightShift);
 
+        // Панель инструментов знает про курсор до клика: иначе подсветка отстаёт на кадр.
+        Vector2 mouse = _input.MousePosition;
+        int mouseX = (int)mouse.X;
+        int mouseY = (int)mouse.Y;
+        _toolbar.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        _toolbar.Update(mouseX, mouseY);
+
         if (_input.WasPressed(Keys.F3))
         {
             _overlay.Visible = !_overlay.Visible;
@@ -208,10 +235,27 @@ public sealed class WorldBoxGame : Game
             _peopleVisible = !_peopleVisible;
         }
 
+        if (_input.WasPressed(Keys.F6))
+        {
+            // Растительность и постройки — самый тяжёлый слой вблизи, его удобно сравнивать.
+            _decorVisible = !_decorVisible;
+            if (_decor != null)
+            {
+                _decor.Visible = _decorVisible;
+            }
+
+            _buildings.Visible = _decorVisible;
+        }
+
         if (_input.WasPressed(Keys.E))
         {
             // Панель народов: кто где живёт и что мешает шагнуть в следующую эпоху.
             _tribePanel.Visible = !_tribePanel.Visible;
+        }
+
+        if (_input.WasPressed(Keys.G))
+        {
+            _marketVisible = !_marketVisible;
         }
 
         if (_input.WasPressed(Keys.T))
@@ -231,10 +275,7 @@ public sealed class WorldBoxGame : Game
 
         if (_input.WasPressed(Keys.N))
         {
-            // Следующий сид считается из текущего, часы не участвуют: цепочка миров повторима.
-            GenerateWorld(unchecked((_seed * 1664525) + 1013904223));
-            RebuildGraphics();
-            _camera.FitToWorld();
+            NewWorld();
         }
 
         if (_input.WasPressed(Keys.R))
@@ -245,35 +286,27 @@ public sealed class WorldBoxGame : Game
 
         if (_input.WasPressed(Keys.Space))
         {
-            if (_clock.Speed == GameSpeed.Paused)
-            {
-                _clock.Speed = _speedBeforePause;
-            }
-            else
-            {
-                _speedBeforePause = _clock.Speed;
-                _clock.Speed = GameSpeed.Paused;
-            }
+            TogglePause();
         }
 
         if (_input.WasPressed(Keys.D1))
         {
-            _clock.Speed = GameSpeed.X1;
+            SetSpeed(GameSpeed.X1);
         }
 
         if (_input.WasPressed(Keys.D2))
         {
-            _clock.Speed = GameSpeed.X4;
+            SetSpeed(GameSpeed.X4);
         }
 
         if (_input.WasPressed(Keys.D3))
         {
-            _clock.Speed = GameSpeed.X16;
+            SetSpeed(GameSpeed.X16);
         }
 
         if (_input.WasPressed(Keys.D4))
         {
-            _clock.Speed = GameSpeed.X64;
+            SetSpeed(GameSpeed.X64);
         }
 
         if (_input.WasPressed(Keys.Home))
@@ -281,9 +314,17 @@ public sealed class WorldBoxGame : Game
             _camera.FitToWorld();
         }
 
-        if (_input.LeftPressed && _minimap != null && _minimap.TryPick(_input.MousePosition, out Vector2 target))
+        if (_input.LeftPressed)
         {
-            _camera.Position = target;
+            // Клик по панели не должен уходить в карту и в мини-карту.
+            if (_toolbar.Contains(mouseX, mouseY))
+            {
+                Apply(_toolbar.HitTest(mouseX, mouseY));
+            }
+            else if (_minimap != null && _minimap.TryPick(mouse, out Vector2 target))
+            {
+                _camera.Position = target;
+            }
         }
 
         if (_input.RightDown || _input.MiddleDown)
@@ -336,6 +377,109 @@ public sealed class WorldBoxGame : Game
         }
     }
 
+    /// <summary>Действие кнопки панели. Всё то же самое доступно с клавиатуры.</summary>
+    private void Apply(ToolbarAction action)
+    {
+        switch (action)
+        {
+            case ToolbarAction.TogglePause:
+                TogglePause();
+                break;
+            case ToolbarAction.Speed1:
+                SetSpeed(GameSpeed.X1);
+                break;
+            case ToolbarAction.Speed2:
+                SetSpeed(GameSpeed.X4);
+                break;
+            case ToolbarAction.Speed3:
+                SetSpeed(GameSpeed.X16);
+                break;
+            case ToolbarAction.Speed4:
+                SetSpeed(GameSpeed.X64);
+                break;
+            case ToolbarAction.MapTerrain:
+                SetMapMode(MapMode.Terrain);
+                break;
+            case ToolbarAction.MapHeight:
+                SetMapMode(MapMode.Height);
+                break;
+            case ToolbarAction.MapTemperature:
+                SetMapMode(MapMode.Temperature);
+                break;
+            case ToolbarAction.MapMoisture:
+                SetMapMode(MapMode.Moisture);
+                break;
+            case ToolbarAction.MapFertility:
+                SetMapMode(MapMode.Fertility);
+                break;
+            case ToolbarAction.MapResources:
+                SetMapMode(MapMode.Resources);
+                break;
+            case ToolbarAction.ToggleTribes:
+                _tribePanel.Visible = !_tribePanel.Visible;
+                break;
+            case ToolbarAction.ToggleMarket:
+                _marketVisible = !_marketVisible;
+                break;
+            case ToolbarAction.ToggleLegend:
+                _legend.Visible = !_legend.Visible;
+                break;
+            case ToolbarAction.ToggleBorders:
+                _bordersVisible = !_bordersVisible;
+                break;
+            case ToolbarAction.ToggleInspector:
+                _inspector.Visible = !_inspector.Visible;
+                break;
+            case ToolbarAction.NewWorld:
+                NewWorld();
+                break;
+            case ToolbarAction.FitWorld:
+                _camera.FitToWorld();
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void TogglePause()
+    {
+        if (_clock.Speed == GameSpeed.Paused)
+        {
+            _clock.Speed = _speedBeforePause;
+            return;
+        }
+
+        _speedBeforePause = _clock.Speed;
+        _clock.Speed = GameSpeed.Paused;
+    }
+
+    private void SetSpeed(GameSpeed speed)
+    {
+        _clock.Speed = speed;
+        _speedBeforePause = speed;
+    }
+
+    /// <summary>Номер скорости от 1 до 4 для подсветки кнопок.</summary>
+    private int SpeedIndex()
+    {
+        GameSpeed speed = _clock.Speed == GameSpeed.Paused ? _speedBeforePause : _clock.Speed;
+        return speed switch
+        {
+            GameSpeed.X64 => 4,
+            GameSpeed.X16 => 3,
+            GameSpeed.X4 => 2,
+            _ => 1,
+        };
+    }
+
+    /// <summary>Следующий сид считается из текущего, часы не участвуют: цепочка миров повторима.</summary>
+    private void NewWorld()
+    {
+        GenerateWorld(unchecked((_seed * 1664525) + 1013904223));
+        RebuildGraphics();
+        _camera.FitToWorld();
+    }
+
     protected override void Draw(GameTime gameTime)
     {
         GraphicsDevice.Clear(Background);
@@ -356,8 +500,9 @@ public sealed class WorldBoxGame : Game
     }
 
     /// <summary>
-    /// Близко и в режиме ландшафта рисуем спрайты, иначе — текстуры чанков.
-    /// Сверху идут границы держав и значки поселений, потом сами люди.
+    /// Близко и в режиме ландшафта рисуем спрайты и поверх них растительность, иначе —
+    /// текстуры чанков. Затем границы держав, постройки и сами люди.
+    /// Вблизи дальние значки поселений гаснут: их заменяют дома и замки.
     /// </summary>
     private void DrawWorld(double seconds)
     {
@@ -369,15 +514,22 @@ public sealed class WorldBoxGame : Game
         if (detail)
         {
             _sprites!.Draw(_batch, _camera, seconds);
+            _decor?.Draw(_batch, _camera);
         }
         else
         {
             _tiles?.Draw(_batch, _camera);
         }
 
-        if (_bordersVisible)
+        if (_bordersVisible && _borders != null)
         {
-            _borders?.Draw(_batch, _primitives, _camera, _territory, _tribes, _settlements);
+            _borders.MarkersVisible = !detail;
+            _borders.Draw(_batch, _primitives, _camera, _territory, _tribes, _settlements);
+        }
+
+        if (detail)
+        {
+            _buildings.Draw(_batch, _primitives, _camera, _tribes, _settlements);
         }
 
         if (_peopleVisible)
@@ -446,6 +598,9 @@ public sealed class WorldBoxGame : Game
         int viewportWidth = GraphicsDevice.Viewport.Width;
         int viewportHeight = GraphicsDevice.Viewport.Height;
 
+        // Таблички городов идут первыми: панели должны ложиться поверх них.
+        _plates.Draw(_batch, _font, _ui, _camera, _tribes, _settlements, viewportWidth, viewportHeight);
+
         _overlay.Draw(_batch, _font, _primitives, in info, viewportWidth, viewportHeight);
         _legend.Draw(_batch, _font, _primitives, viewportWidth);
         _minimap?.Draw(_batch, _primitives, _camera);
@@ -466,6 +621,19 @@ public sealed class WorldBoxGame : Game
             _tech,
             _eraTable,
             _settlements);
+
+        // Панель инструментов рисуется последней: подсказка должна быть поверх всего.
+        var toolbarState = new ToolbarState(
+            _clock.Speed == GameSpeed.Paused,
+            SpeedIndex(),
+            _mode,
+            _tribePanel.Visible,
+            _marketVisible,
+            _legend.Visible,
+            _bordersVisible,
+            _inspector.Visible);
+
+        _toolbar.Draw(_batch, _font, _ui, toolbarState, viewportWidth, viewportHeight);
     }
 
     private void SetMapMode(MapMode mode)
@@ -535,6 +703,12 @@ public sealed class WorldBoxGame : Game
         _sprites?.Dispose();
         _sprites = new TileSpriteRenderer(GraphicsDevice, _map);
 
+        // Где что растёт, считается один раз на мир, а не каждый кадр.
+        _decor?.Dispose();
+        _decor = new DecorRenderer(_decorAtlas, _map);
+        _decor.Visible = _decorVisible;
+        _buildings.Visible = _decorVisible;
+
         _borders?.Dispose();
         _borders = new TerritoryRenderer(GraphicsDevice, _map.Width, _map.Height);
 
@@ -559,6 +733,7 @@ public sealed class WorldBoxGame : Game
         _graphics.ApplyChanges();
         _camera.SetViewport(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
         _minimap?.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        _toolbar.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
         _resizing = false;
     }
 }

@@ -11,6 +11,8 @@ namespace WorldBox.Render;
 /// владельцы действительно менялись, и не чаще раза в несколько кадров.
 /// Край владений рисуется ярче середины — получается чёткая политическая обводка.
 /// Значок поселения меняется с эпохой народа: хижина, стена, башня, дым, ночные огни.
+/// Вблизи значки выключаются флагом <see cref="MarkersVisible"/>: там их заменяют постройки
+/// из <see cref="SettlementRenderer"/>.
 /// </summary>
 public sealed class TerritoryRenderer : IDisposable
 {
@@ -46,6 +48,9 @@ public sealed class TerritoryRenderer : IDisposable
     }
 
     public bool Visible { get; set; } = true;
+
+    /// <summary>Рисовать ли дальние значки поселений. Вблизи их заменяют постройки.</summary>
+    public bool MarkersVisible { get; set; } = true;
 
     /// <summary>Сколько значков поселений ушло в последний кадр.</summary>
     public int DrawnSettlements { get; private set; }
@@ -87,7 +92,11 @@ public sealed class TerritoryRenderer : IDisposable
         }
 
         batch.Draw(_texture, Vector2.Zero, null, Color.White, 0f, Vector2.Zero, Vector2.One, SpriteEffects.None, 0f);
-        DrawSettlements(batch, primitives, camera, tribes, settlements);
+
+        if (MarkersVisible)
+        {
+            DrawSettlements(batch, primitives, camera, tribes, settlements);
+        }
     }
 
     private void Rebuild(Territory territory, TribeStore tribes)
