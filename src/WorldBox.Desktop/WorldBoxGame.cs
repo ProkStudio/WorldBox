@@ -7,6 +7,7 @@ using WorldBox.Core.Diagnostics;
 using WorldBox.Core.People;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Time;
+using WorldBox.Core.Tribes;
 using WorldBox.Core.World;
 using WorldBox.Render;
 using WorldBox.Render.Text;
@@ -16,13 +17,17 @@ namespace WorldBox.Desktop;
 
 /// <summary>
 /// Окно и игровой цикл. Сейчас здесь: живая карта мира (биомы, реки, ресурсы),
-/// шесть режимов карты, мини-карта, легенда, ближний план спрайтами 16x16
-/// и первые жители, которые едят, кочуют, рожают и умирают.
+/// шесть режимов карты, мини-карта, легенда, ближний план спрайтами 16x16,
+/// жители, которые едят, кочуют, рожают и умирают, а также племена со своими
+/// поселениями и границами.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
     /// <summary>Сколько людей селится на старте партии.</summary>
-    private const int StartPeople = 400;
+    private const int StartPeople = 420;
+
+    /// <summary>Сколько народов зарождается на старте.</summary>
+    private const int StartTribes = 7;
 
     private static readonly Color Background = new Color(9, 11, 14);
     private static readonly Color BorderColor = new Color(94, 159, 232, 150);
@@ -45,12 +50,17 @@ public sealed class WorldBoxGame : Game
     private WorldMap _map = null!;
     private Population _people = null!;
     private PopulationSystem _populationSystem = null!;
+    private TribeStore _tribes = null!;
+    private SettlementStore _settlements = null!;
+    private Territory _territory = null!;
+    private SettlementSystem _settlementSystem = null!;
     private SpriteBatch _batch = null!;
     private Primitives _primitives = null!;
     private PixelFont _font = null!;
     private Camera2D _camera = null!;
     private TileRenderer? _tiles;
     private TileSpriteRenderer? _sprites;
+    private TerritoryRenderer? _borders;
     private Minimap? _minimap;
 
     private MapMode _mode = MapMode.Terrain;
@@ -60,6 +70,7 @@ public sealed class WorldBoxGame : Game
     private bool _resizing;
     private bool _detailTiles = true;
     private bool _peopleVisible = true;
+    private bool _bordersVisible = true;
 
     public WorldBoxGame(int seed, int worldSize)
     {
@@ -105,6 +116,7 @@ public sealed class WorldBoxGame : Game
     {
         _tiles?.Dispose();
         _sprites?.Dispose();
+        _borders?.Dispose();
         _minimap?.Dispose();
         _font.Dispose();
         _primitives.Dispose();
@@ -172,6 +184,11 @@ public sealed class WorldBoxGame : Game
         if (_input.WasPressed(Keys.F5))
         {
             _peopleVisible = !_peopleVisible;
+        }
+
+        if (_input.WasPressed(Keys.T))
+        {
+            _bordersVisible = !_bordersVisible;
         }
 
         if (_input.WasPressed(Keys.L))
@@ -312,7 +329,7 @@ public sealed class WorldBoxGame : Game
 
     /// <summary>
     /// Близко и в режиме ландшафта рисуем спрайты, иначе — текстуры чанков.
-    /// Режимы вроде высоты или влажности всегда идут дальним рендером: там нужны цвета, а не текстура.
+    /// Сверху идут границы держав и значки поселений, потом сами люди.
     /// </summary>
     private void DrawWorld(double seconds)
     {
@@ -328,6 +345,11 @@ public sealed class WorldBoxGame : Game
         else
         {
             _tiles?.Draw(_batch, _camera);
+        }
+
+        if (_bordersVisible)
+        {
+            _borders?.Draw(_batch, _primitives, _camera, _territory, _tribes, _settlements);
         }
 
         if (_peopleVisible)
@@ -356,6 +378,7 @@ public sealed class WorldBoxGame : Game
         int cursorX = (int)MathF.Floor(cursorWorld.X);
         int cursorY = (int)MathF.Floor(cursorWorld.Y);
         bool inside = _world.InBounds(cursorX, cursorY);
+        short largest = _tribes.Largest();
 
         var info = new OverlayInfo
         {
@@ -377,6 +400,9 @@ public sealed class WorldBoxGame : Game
             People = _people.Count,
             Births = _populationSystem.LastBirths,
             Deaths = _populationSystem.LastDeaths,
+            Tribes = _tribes.Count,
+            Settlements = _settlements.Count,
+            LargestTribe = _tribes.NameOf(largest),
         };
 
         int viewportWidth = GraphicsDevice.Viewport.Width;
@@ -400,7 +426,7 @@ public sealed class WorldBoxGame : Game
         _legend.Rebuild(_map, mode);
     }
 
-    /// <summary>Считает новую карту, селит людей и начинает партию заново. Графика здесь не трогается.</summary>
+    /// <summary>Считает новую карту, селит народы и начинает партию заново. Графика здесь не трогается.</summary>
     private void GenerateWorld(int seed)
     {
         var watch = Stopwatch.StartNew();
@@ -415,15 +441,21 @@ public sealed class WorldBoxGame : Game
         _world.SetMap(map);
 
         _people = new Population(Population.DefaultCapacity, _size, _size);
-        PopulationSeeder.Seed(_world, _people, StartPeople);
+        _tribes = new TribeStore();
+        _settlements = new SettlementStore();
+        _territory = new Territory(_size, _size, _tribes.Capacity);
+
+        TribeSeeder.Seed(_world, _people, _tribes, _settlements, _territory, StartTribes, StartPeople / StartTribes);
 
         _populationSystem = new PopulationSystem(_people);
-        _loop = new SimulationLoop(_world, _populationSystem);
+        _settlementSystem = new SettlementSystem(_people, _tribes, _settlements, _territory);
+        _loop = new SimulationLoop(_world, _populationSystem, _settlementSystem);
 
         _clock.Reset();
         _clock.Speed = GameSpeed.X1;
         _speedBeforePause = GameSpeed.X1;
         _simStats.Clear();
+        _borders?.Invalidate();
     }
 
     private void RebuildGraphics()
@@ -435,6 +467,9 @@ public sealed class WorldBoxGame : Game
 
         _sprites?.Dispose();
         _sprites = new TileSpriteRenderer(GraphicsDevice, _map);
+
+        _borders?.Dispose();
+        _borders = new TerritoryRenderer(GraphicsDevice, _map.Width, _map.Height);
 
         _minimap?.Dispose();
         _minimap = new Minimap(GraphicsDevice, _map);
