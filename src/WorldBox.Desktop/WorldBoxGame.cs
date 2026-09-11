@@ -15,7 +15,8 @@ namespace WorldBox.Desktop;
 
 /// <summary>
 /// Окно и игровой цикл. На срезе S1 здесь живая карта мира: биомы, реки, ресурсы,
-/// режимы карты, мини-карта, легенда и генерация нового мира по клавише. Жители появятся на S3.
+/// режимы карты, мини-карта, легенда и генерация нового мира по клавише. На S2 добавлен
+/// ближний план со спрайтами 16x16. Жители появятся на S3.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
@@ -42,6 +43,7 @@ public sealed class WorldBoxGame : Game
     private PixelFont _font = null!;
     private Camera2D _camera = null!;
     private TileRenderer? _tiles;
+    private TileSpriteRenderer? _sprites;
     private Minimap? _minimap;
 
     private MapMode _mode = MapMode.Terrain;
@@ -49,6 +51,7 @@ public sealed class WorldBoxGame : Game
     private double _generationMs;
     private int _seed;
     private bool _resizing;
+    private bool _detailTiles = true;
 
     public WorldBoxGame(int seed, int worldSize)
     {
@@ -93,6 +96,7 @@ public sealed class WorldBoxGame : Game
     protected override void UnloadContent()
     {
         _tiles?.Dispose();
+        _sprites?.Dispose();
         _minimap?.Dispose();
         _font.Dispose();
         _primitives.Dispose();
@@ -149,6 +153,12 @@ public sealed class WorldBoxGame : Game
         if (_input.WasPressed(Keys.F1))
         {
             _overlay.HintVisible = !_overlay.HintVisible;
+        }
+
+        if (_input.WasPressed(Keys.F4))
+        {
+            // Аварийный выключатель ближнего плана: полезен при замерах и на слабом железе.
+            _detailTiles = !_detailTiles;
         }
 
         if (_input.WasPressed(Keys.L))
@@ -273,7 +283,7 @@ public sealed class WorldBoxGame : Game
         GraphicsDevice.Clear(Background);
 
         _batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, null, null, null, _camera.View);
-        _tiles?.Draw(_batch, _camera);
+        DrawWorld(gameTime.TotalGameTime.TotalSeconds);
         DrawWorldBorder();
         _batch.End();
 
@@ -285,6 +295,26 @@ public sealed class WorldBoxGame : Game
 
         _frameWatch.Stop();
         _frameStats.Add(_frameWatch.Elapsed.TotalMilliseconds);
+    }
+
+    /// <summary>
+    /// Близко и в режиме ландшафта рисуем спрайты, иначе — текстуры чанков.
+    /// Режимы вроде высоты или влажности всегда идут дальним рендером: там нужны цвета, а не текстура.
+    /// </summary>
+    private void DrawWorld(double seconds)
+    {
+        bool detail = _detailTiles
+            && _mode == MapMode.Terrain
+            && _sprites != null
+            && _camera.Zoom >= TileSpriteRenderer.MinZoom;
+
+        if (detail)
+        {
+            _sprites!.Draw(_batch, _camera, seconds);
+            return;
+        }
+
+        _tiles?.Draw(_batch, _camera);
     }
 
     private void DrawWorldBorder()
@@ -371,6 +401,9 @@ public sealed class WorldBoxGame : Game
         _tiles = new TileRenderer(GraphicsDevice, _map);
         _tiles.Mode = _mode;
         _tiles.BuildAll();
+
+        _sprites?.Dispose();
+        _sprites = new TileSpriteRenderer(GraphicsDevice, _map);
 
         _minimap?.Dispose();
         _minimap = new Minimap(GraphicsDevice, _map);
