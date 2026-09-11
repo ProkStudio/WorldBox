@@ -8,12 +8,14 @@ namespace WorldBox.UI;
 /// <summary>
 /// Мини-карта в углу. Показывает весь мир и рамку текущего вида,
 /// по клику переносит камеру. Текстура строится один раз на режим карты.
+/// На узких окнах поднимается выше панели инструментов, чтобы не перекрываться с ней.
 /// </summary>
 public sealed class Minimap : IDisposable
 {
-    private static readonly Color PanelColor = new Color(10, 12, 16, 200);
-    private static readonly Color BorderColor = new Color(255, 255, 255, 50);
-    private static readonly Color ViewColor = new Color(94, 159, 232, 220);
+    /// <summary>Уже этого окно — поднимаем карту над панелью инструментов.</summary>
+    private const int NarrowWindow = 1360;
+
+    private const int FramePadding = 6;
 
     private readonly WorldMap _map;
     private readonly Texture2D _texture;
@@ -24,6 +26,9 @@ public sealed class Minimap : IDisposable
 
     public Minimap(GraphicsDevice device, WorldMap map, int maxSize = 224)
     {
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(map);
+
         _map = map;
         _step = Math.Max(1, (Math.Max(map.Width, map.Height) + maxSize - 1) / maxSize);
         _pixelWidth = Math.Max(1, map.Width / _step);
@@ -55,19 +60,29 @@ public sealed class Minimap : IDisposable
 
     public void Layout(int viewportWidth, int viewportHeight, int margin = 16)
     {
+        int lift = viewportWidth < NarrowWindow ? Toolbar.ReservedHeight : 0;
         Bounds = new Rectangle(
             viewportWidth - _pixelWidth - margin,
-            viewportHeight - _pixelHeight - margin,
+            viewportHeight - _pixelHeight - margin - lift,
             _pixelWidth,
             _pixelHeight);
     }
 
-    public void Draw(SpriteBatch batch, Primitives primitives, Camera2D camera)
+    public void Draw(SpriteBatch batch, Primitives primitives, Camera2D camera, UiSkin? skin = null)
     {
-        var frame = new Rectangle(Bounds.X - 4, Bounds.Y - 4, Bounds.Width + 8, Bounds.Height + 8);
-        primitives.FillRect(batch, frame, PanelColor);
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(primitives);
+        ArgumentNullException.ThrowIfNull(camera);
+
+        var frame = new Rectangle(
+            Bounds.X - FramePadding,
+            Bounds.Y - FramePadding,
+            Bounds.Width + (FramePadding * 2),
+            Bounds.Height + (FramePadding * 2));
+
+        UiChrome.Panel(batch, primitives, skin, frame);
         batch.Draw(_texture, Bounds, Color.White);
-        primitives.FrameRect(batch, frame, BorderColor);
+        primitives.FrameRect(batch, Bounds, UiPalette.Border, 1);
 
         camera.VisibleTiles(out int minX, out int minY, out int maxX, out int maxY, 0);
         float scaleX = Bounds.Width / (float)_map.Width;
@@ -77,7 +92,10 @@ public sealed class Minimap : IDisposable
             Bounds.Y + (int)(minY * scaleY),
             Math.Max(3, (int)((maxX - minX) * scaleX)),
             Math.Max(3, (int)((maxY - minY) * scaleY)));
-        primitives.FrameRect(batch, view, ViewColor);
+
+        // Рамка вида: тёмный контур плюс яркая линия, иначе теряется на светлых биомах.
+        primitives.FrameRect(batch, new Rectangle(view.X - 1, view.Y - 1, view.Width + 2, view.Height + 2), UiPalette.Border, 1);
+        primitives.FrameRect(batch, view, UiPalette.Accent, 1);
     }
 
     /// <summary>Если кликнули по мини-карте, возвращает точку мира в тайлах.</summary>

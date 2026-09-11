@@ -1,5 +1,6 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using WorldBox.Core.Art;
 using WorldBox.Core.Time;
 using WorldBox.Render;
 using WorldBox.Render.Text;
@@ -9,16 +10,14 @@ namespace WorldBox.UI;
 /// <summary>
 /// Угловой оверлей с fps, временем кадра и состоянием мира.
 /// Строки собираются в переиспользуемый буфер: за кадр ноль аллокаций.
+/// Каждая строка помечена значком, чтобы глаз находил нужную без чтения.
 /// </summary>
 public sealed class DebugOverlay
 {
-    private static readonly Color PanelColor = new Color(10, 12, 16, 190);
-    private static readonly Color BorderColor = new Color(255, 255, 255, 40);
-    private static readonly Color TextColor = new Color(232, 232, 232);
-    private static readonly Color AccentColor = new Color(94, 159, 232);
-    private static readonly Color WarningColor = new Color(233, 115, 102);
+    private const int PanelWidth = 620;
+    private const int IconSpace = 22;
+
     private static readonly Color PeopleColor = new Color(246, 214, 160);
-    private static readonly Color TribesColor = new Color(158, 204, 172);
     private static readonly Color EraColor = new Color(206, 178, 240);
 
     private readonly TextBuilder _line = new TextBuilder(256);
@@ -29,20 +28,36 @@ public sealed class DebugOverlay
 
     public int Scale { get; set; } = 2;
 
-    public void Draw(SpriteBatch batch, PixelFont font, Primitives primitives, in OverlayInfo info, int viewportWidth, int viewportHeight)
+    public void Draw(
+        SpriteBatch batch,
+        PixelFont font,
+        Primitives primitives,
+        in OverlayInfo info,
+        int viewportWidth,
+        int viewportHeight,
+        UiSkin? skin = null)
     {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(font);
+        ArgumentNullException.ThrowIfNull(primitives);
+
         if (Visible)
         {
-            DrawPanel(batch, font, primitives, in info);
+            DrawPanel(batch, font, primitives, skin, in info);
         }
 
         if (HintVisible)
         {
-            DrawHint(batch, font, primitives, viewportWidth, viewportHeight);
+            DrawHint(batch, font, primitives, skin, viewportWidth, viewportHeight);
         }
     }
 
-    private void DrawPanel(SpriteBatch batch, PixelFont font, Primitives primitives, in OverlayInfo info)
+    private void DrawPanel(
+        SpriteBatch batch,
+        PixelFont font,
+        Primitives primitives,
+        UiSkin? skin,
+        in OverlayInfo info)
     {
         int scale = Math.Max(1, Scale);
         int step = font.LineHeight * scale;
@@ -59,30 +74,31 @@ public sealed class DebugOverlay
             lines++;
         }
 
-        var panel = new Rectangle(12, 12, 620, (step * lines) + (10 * scale));
-        primitives.FillRect(batch, panel, PanelColor);
-        primitives.FrameRect(batch, panel, BorderColor);
+        var panel = new Rectangle(14, 14, PanelWidth, (step * lines) + (11 * scale));
+        UiChrome.Panel(batch, primitives, skin, panel);
 
-        int x = panel.X + (6 * scale);
+        int iconX = panel.X + (5 * scale);
+        int textX = iconX + (skin != null ? IconSpace : 0);
         int y = panel.Y + (5 * scale);
 
         _line.Clear()
             .Append(Strings.Get("hud.fps")).Append(' ').Append((int)Math.Round(info.Fps))
             .Append("   ").Append(Strings.Get("hud.frame")).Append(' ').Append(info.FrameMs, 1).Append(' ').Append(Strings.Get("hud.ms"))
             .Append("   ").Append(Strings.Get("hud.worst")).Append(' ').Append(info.FrameMsWorst, 1);
-        font.Draw(batch, _line.Span, new Vector2(x, y), AccentColor, scale);
+        DrawLine(batch, font, skin, IconKind.Gear, iconX, textX, y, step, UiPalette.Accent, scale);
         y += step;
 
         _line.Clear()
             .Append(Strings.Get("hud.sim")).Append(' ').Append(info.SimMs, 2).Append(' ').Append(Strings.Get("hud.ms"))
             .Append("   ").Append(Strings.Get("hud.ticks")).Append(' ').AppendGrouped(info.Ticks)
             .Append("   ").Append(Strings.Get("hud.speed")).Append(' ').Append(SpeedLabel(info.Speed));
-        font.Draw(batch, _line.Span, new Vector2(x, y), TextColor, scale);
+        IconKind clock = info.Speed == GameSpeed.Paused ? IconKind.Pause : IconKind.Play;
+        DrawLine(batch, font, skin, clock, iconX, textX, y, step, UiPalette.Text, scale);
         y += step;
 
         _line.Clear()
             .Append(Strings.Get("hud.year")).Append(' ').AppendYear(info.Year);
-        font.Draw(batch, _line.Span, new Vector2(x, y), TextColor, scale);
+        DrawLine(batch, font, skin, IconKind.Chronicle, iconX, textX, y, step, UiPalette.Text, scale);
         y += step;
 
         if (info.EraName != null)
@@ -90,7 +106,7 @@ public sealed class DebugOverlay
             _line.Clear()
                 .Append(Strings.Get("hud.era")).Append(' ').Append(info.EraName)
                 .Append("   ").Append(Strings.Get("hud.years_per_tick")).Append(' ').Append(info.YearsPerTick, 2);
-            font.Draw(batch, _line.Span, new Vector2(x, y), EraColor, scale);
+            DrawLine(batch, font, skin, IconKind.Era, iconX, textX, y, step, EraColor, scale);
             y += step;
         }
 
@@ -98,7 +114,7 @@ public sealed class DebugOverlay
             .Append(Strings.Get("hud.people")).Append(' ').AppendGrouped(info.People)
             .Append("   ").Append(Strings.Get("hud.births")).Append(" +").Append(info.Births)
             .Append("   ").Append(Strings.Get("hud.deaths")).Append(" -").Append(info.Deaths);
-        font.Draw(batch, _line.Span, new Vector2(x, y), PeopleColor, scale);
+        DrawLine(batch, font, skin, IconKind.People, iconX, textX, y, step, PeopleColor, scale);
         y += step;
 
         string largest = info.LargestTribe ?? string.Empty;
@@ -110,13 +126,13 @@ public sealed class DebugOverlay
             _line.Append("   ").Append(Strings.Get("hud.largest")).Append(' ').Append(largest);
         }
 
-        font.Draw(batch, _line.Span, new Vector2(x, y), TribesColor, scale);
+        DrawLine(batch, font, skin, IconKind.Settlement, iconX, textX, y, step, UiPalette.Good, scale);
         y += step;
 
         _line.Clear()
             .Append(Strings.Get("hud.zoom")).Append(' ').Append(info.Zoom, 2).Append(' ').Append(Strings.Get("hud.px"))
             .Append("   ").Append(Strings.Get("hud.visible")).Append(' ').Append((int)info.VisibleTiles);
-        font.Draw(batch, _line.Span, new Vector2(x, y), TextColor, scale);
+        DrawLine(batch, font, skin, IconKind.MapTerrain, iconX, textX, y, step, UiPalette.Text, scale);
         y += step;
 
         _line.Clear().Append(Strings.Get("hud.cursor")).Append(' ');
@@ -131,27 +147,62 @@ public sealed class DebugOverlay
 
         _line.Append("   ").Append(Strings.Get("hud.world")).Append(' ')
             .Append(info.WorldWidth).Append('x').Append(info.WorldHeight);
-        font.Draw(batch, _line.Span, new Vector2(x, y), TextColor, scale);
+        DrawLine(batch, font, skin, IconKind.Inspect, iconX, textX, y, step, UiPalette.TextMuted, scale);
         y += step;
 
         if (info.IsBehind)
         {
-            font.Draw(batch, Strings.Get("hud.behind").AsSpan(), new Vector2(x, y), WarningColor, scale);
+            _line.Clear().Append(Strings.Get("hud.behind"));
+            DrawLine(batch, font, skin, IconKind.Warning, iconX, textX, y, step, UiPalette.Bad, scale);
         }
     }
 
-    private static void DrawHint(SpriteBatch batch, PixelFont font, Primitives primitives, int viewportWidth, int viewportHeight)
+    /// <summary>Рисует собранную строку и её значок. Значок рисуется только если есть скин.</summary>
+    private void DrawLine(
+        SpriteBatch batch,
+        PixelFont font,
+        UiSkin? skin,
+        IconKind icon,
+        int iconX,
+        int textX,
+        int y,
+        int lineHeight,
+        Color color,
+        int scale)
+    {
+        if (skin != null)
+        {
+            skin.Icon(batch, icon, iconX, y + ((lineHeight - IconAtlas.IconSize) / 2), 1);
+        }
+
+        font.Draw(batch, _line.Span, new Vector2(textX, y), color, scale);
+    }
+
+    /// <summary>Подсказка по клавишам стоит над панелью инструментов, а не под ней.</summary>
+    private static void DrawHint(
+        SpriteBatch batch,
+        PixelFont font,
+        Primitives primitives,
+        UiSkin? skin,
+        int viewportWidth,
+        int viewportHeight)
     {
         const int scale = 2;
         string line1 = Strings.Get("hint.line1");
         string line2 = Strings.Get("hint.line2");
         int width = Math.Max(font.Measure(line1, scale), font.Measure(line2, scale)) + (16 * scale);
         int height = (font.LineHeight * scale * 2) + (10 * scale);
-        var panel = new Rectangle((viewportWidth - width) / 2, viewportHeight - height - 16, width, height);
-        primitives.FillRect(batch, panel, PanelColor);
-        primitives.FrameRect(batch, panel, BorderColor);
-        font.Draw(batch, line1, new Vector2(panel.X + (8 * scale), panel.Y + (5 * scale)), TextColor, scale);
-        font.Draw(batch, line2, new Vector2(panel.X + (8 * scale), panel.Y + (5 * scale) + (font.LineHeight * scale)), TextColor, scale);
+        int bottom = viewportHeight - Toolbar.ReservedHeight - 8;
+        var panel = new Rectangle((viewportWidth - width) / 2, bottom - height, width, height);
+
+        UiChrome.Panel(batch, primitives, skin, panel);
+        font.Draw(batch, line1, new Vector2(panel.X + (8 * scale), panel.Y + (5 * scale)), UiPalette.Text, scale);
+        font.Draw(
+            batch,
+            line2,
+            new Vector2(panel.X + (8 * scale), panel.Y + (5 * scale) + (font.LineHeight * scale)),
+            UiPalette.TextMuted,
+            scale);
     }
 
     private static string SpeedLabel(GameSpeed speed) => speed switch

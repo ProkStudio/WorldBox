@@ -1,5 +1,6 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using WorldBox.Core.Art;
 using WorldBox.Core.World;
 using WorldBox.Render;
 using WorldBox.Render.Text;
@@ -10,22 +11,20 @@ namespace WorldBox.UI;
 /// Легенда карты в правом верхнем углу. Для ландшафта и ресурсов показывает долю
 /// каждого типа, для числовых режимов — цветовую шкалу. Переключается клавишей L.
 /// Пересобирается только при смене мира или режима, каждый кадр только рисуется.
+/// Фон и рамка берутся из <see cref="UiSkin"/>, если скин передан.
 /// </summary>
 public sealed class BiomeLegend
 {
     private const int Scale = 2;
     private const int MaxRows = 12;
     private const int PanelWidth = 330;
-    private const int Padding = 10;
+    private const int Padding = 12;
     private const int SwatchSize = 14;
     private const int GradientSteps = 12;
-    private const int GradientHeight = 18;
+    private const int GradientHeight = 20;
     private const int Margin = 16;
+    private const int IconSpace = 22;
 
-    private static readonly Color PanelColor = new Color(10, 12, 16, 200);
-    private static readonly Color BorderColor = new Color(255, 255, 255, 40);
-    private static readonly Color TitleColor = new Color(150, 190, 240);
-    private static readonly Color TextColor = new Color(228, 232, 238);
     private static readonly Color EmptyColor = new Color(20, 22, 28);
 
     private readonly TextBuilder _line = new TextBuilder(64);
@@ -62,8 +61,17 @@ public sealed class BiomeLegend
         }
     }
 
-    public void Draw(SpriteBatch batch, PixelFont font, Primitives primitives, int viewportWidth)
+    public void Draw(
+        SpriteBatch batch,
+        PixelFont font,
+        Primitives primitives,
+        int viewportWidth,
+        UiSkin? skin = null)
     {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(font);
+        ArgumentNullException.ThrowIfNull(primitives);
+
         if (!Visible || _rowCount == 0)
         {
             return;
@@ -71,17 +79,25 @@ public sealed class BiomeLegend
 
         int lineHeight = font.LineHeight * Scale;
         int body = _gradient ? GradientHeight : _rowCount * lineHeight;
-        int height = (Padding * 2) + lineHeight + 4 + body;
+        int height = (Padding * 2) + lineHeight + 6 + body;
         int left = viewportWidth - PanelWidth - Margin;
         var panel = new Rectangle(left, Margin, PanelWidth, height);
 
-        primitives.FillRect(batch, panel, PanelColor);
-        primitives.FrameRect(batch, panel, BorderColor, 1);
+        UiChrome.Panel(batch, primitives, skin, panel);
 
         int x = left + Padding;
         int y = Margin + Padding;
-        font.Draw(batch, _title, new Vector2(x, y), TitleColor, Scale);
-        y += lineHeight + 4;
+
+        // Значок слева от заголовка сразу говорит, что это за панель.
+        int titleX = x;
+        if (skin != null)
+        {
+            skin.Icon(batch, IconKind.Legend, x, y + ((lineHeight - IconAtlas.IconSize) / 2), 1);
+            titleX += IconSpace;
+        }
+
+        font.Draw(batch, _title, new Vector2(titleX, y), UiPalette.Accent, Scale);
+        y += lineHeight + 6;
 
         if (_gradient)
         {
@@ -93,19 +109,27 @@ public sealed class BiomeLegend
                 primitives.FillRect(batch, cell, _colors[i]);
             }
 
+            primitives.FrameRect(batch, new Rectangle(x, y, segment * _rowCount, GradientHeight), UiPalette.Border, 1);
             return;
         }
 
         int percentX = left + PanelWidth - Padding - 70;
         for (int i = 0; i < _rowCount; i++)
         {
+            // Полоски через строку: глазу легче вести строку до процентов.
+            if ((i & 1) == 0)
+            {
+                var stripe = new Rectangle(x - 5, y, PanelWidth - (Padding * 2) + 10, lineHeight);
+                primitives.FillRect(batch, stripe, UiPalette.PanelLight * 0.45f);
+            }
+
             var swatch = new Rectangle(x, y + ((lineHeight - SwatchSize) / 2), SwatchSize, SwatchSize);
             primitives.FillRect(batch, swatch, _colors[i]);
-            primitives.FrameRect(batch, swatch, BorderColor, 1);
-            font.Draw(batch, _names[i] ?? string.Empty, new Vector2(x + SwatchSize + 8, y), TextColor, Scale);
+            primitives.FrameRect(batch, swatch, UiPalette.Border, 1);
+            font.Draw(batch, _names[i] ?? string.Empty, new Vector2(x + SwatchSize + 8, y), UiPalette.Text, Scale);
 
             _line.Clear().Append(_shares[i] * 100f, 1).Append('%');
-            font.Draw(batch, _line.Span, new Vector2(percentX, y), TextColor, Scale);
+            font.Draw(batch, _line.Span, new Vector2(percentX, y), UiPalette.TextMuted, Scale);
             y += lineHeight;
         }
     }
