@@ -48,7 +48,7 @@ public sealed class TribeStore
 
     public int[] Settlements { get; }
 
-    /// <summary>Номер эпохи из data/eras.json. Пока у всех нулевая, развитие будет на S6.</summary>
+    /// <summary>Номер эпохи из data/eras.json. Двигает его система эпох, читают рисование и интерфейс.</summary>
     public byte[] Era { get; }
 
     public int[] HomeX { get; }
