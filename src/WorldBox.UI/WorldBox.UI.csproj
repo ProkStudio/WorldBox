@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>WorldBox.UI</RootNamespace>
+    <AssemblyName>WorldBox.UI</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WorldBox.Core\WorldBox.Core.csproj" />
+    <ProjectReference Include="..\WorldBox.Render\WorldBox.Render.csproj" />
+  </ItemGroup>
+
+</Project>

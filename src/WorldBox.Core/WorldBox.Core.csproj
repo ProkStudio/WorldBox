@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Симуляция. Железное правило: здесь нет ссылок на MonoGame и вообще на графику. -->
+  <PropertyGroup>
+    <RootNamespace>WorldBox.Core</RootNamespace>
+    <AssemblyName>WorldBox.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>

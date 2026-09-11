@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Консольный прогон симуляции без окна. Замеры из него попадают в docs/PERF.md -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>WorldBox.Bench</RootNamespace>
+    <AssemblyName>WorldBox.Bench</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WorldBox.Core\WorldBox.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\data\**\*.json" Link="data\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
