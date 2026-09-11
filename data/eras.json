@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "comment": "Таблица эпох. Правится без кода. requires.resources — нужен доступ через свои месторождения или торговлю.",
+  "eras": [
+    {
+      "id": "paleolithic",
+      "name": "Палеолит",
+      "yearsPerTick": 25,
+      "requires": { "minPop": 0, "resources": [], "geo": [], "prev": null },
+      "unlocks": ["охота", "собирательство", "огонь", "каменные орудия"],
+      "foodPerWorker": 1.0,
+      "militaryPower": 1
+    },
+    {
+      "id": "neolithic",
+      "name": "Неолит",
+      "yearsPerTick": 10,
+      "requires": { "minPop": 120, "resources": [], "geo": ["fertile"], "prev": "paleolithic" },
+      "unlocks": ["земледелие", "скотоводство", "керамика", "первые деревни"],
+      "foodPerWorker": 2.2,
+      "militaryPower": 2
+    },
+    {
+      "id": "bronze",
+      "name": "Бронзовый век",
+      "yearsPerTick": 5,
+      "requires": { "minPop": 600, "resources": ["copper", "tin"], "geo": [], "prev": "neolithic" },
+      "unlocks": ["металлургия", "письменность", "города", "колесо"],
+      "foodPerWorker": 2.8,
+      "militaryPower": 4
+    },
+    {
+      "id": "iron",
+      "name": "Железный век",
+      "yearsPerTick": 4,
+      "requires": { "minPop": 1500, "resources": ["iron", "wood"], "geo": [], "prev": "bronze" },
+      "unlocks": ["железные орудия", "плуг", "регулярная армия", "дороги"],
+      "foodPerWorker": 3.4,
+      "militaryPower": 7
+    },
+    {
+      "id": "antiquity",
+      "name": "Античность",
+      "yearsPerTick": 3,
+      "requires": { "minPop": 5000, "resources": ["stone"], "geo": [], "prev": "iron" },
+      "unlocks": ["империи", "акведуки", "философия", "монета", "мореходство"],
+      "foodPerWorker": 3.8,
+      "militaryPower": 10
+    },
+    {
+      "id": "medieval",
+      "name": "Средневековье",
+      "yearsPerTick": 2,
+      "requires": { "minPop": 15000, "resources": ["iron"], "geo": [], "prev": "antiquity" },
+      "unlocks": ["феодализм", "замки", "трёхполье", "университеты", "каравеллы"],
+      "foodPerWorker": 4.2,
+      "militaryPower": 14
+    },
+    {
+      "id": "gunpowder",
+      "name": "Порох",
+      "yearsPerTick": 1.5,
+      "requires": { "minPop": 40000, "resources": ["saltpeter", "iron"], "geo": [], "prev": "medieval" },
+      "unlocks": ["огнестрел", "пушки", "океанский флот", "колонии", "печать"],
+      "foodPerWorker": 4.6,
+      "militaryPower": 22
+    },
+    {
+      "id": "industrial",
+      "name": "Индустрия",
+      "yearsPerTick": 1,
+      "requires": { "minPop": 120000, "resources": ["coal", "iron"], "geo": ["river"], "prev": "gunpowder" },
+      "unlocks": ["паровая машина", "фабрики", "железные дороги", "массовая армия"],
+      "foodPerWorker": 6.0,
+      "militaryPower": 35,
+      "pollution": 2
+    },
+    {
+      "id": "oil",
+      "name": "Нефть и электричество",
+      "yearsPerTick": 0.5,
+      "requires": { "minPop": 400000, "resources": ["oil"], "geo": [], "prev": "industrial" },
+      "unlocks": ["двигатель", "электросети", "авиация", "радио", "химия"],
+      "foodPerWorker": 9.0,
+      "militaryPower": 55,
+      "pollution": 4
+    },
+    {
+      "id": "modern",
+      "name": "Современность",
+      "yearsPerTick": 0.25,
+      "requires": { "minPop": 1200000, "resources": ["uranium", "oil"], "geo": [], "prev": "oil" },
+      "unlocks": ["атом", "компьютеры", "медицина", "глобальная торговля", "спутники"],
+      "foodPerWorker": 14.0,
+      "militaryPower": 80,
+      "pollution": 5
+    },
+    {
+      "id": "space",
+      "name": "Космос",
+      "yearsPerTick": 0.25,
+      "requires": { "minPop": 4000000, "resources": ["uranium", "oil", "iron"], "geo": [], "prev": "modern" },
+      "unlocks": ["орбитальные станции", "колонии", "термояд", "ИИ"],
+      "foodPerWorker": 20.0,
+      "militaryPower": 120,
+      "pollution": 3
+    }
+  ],
+  "diffusion": {
+    "comment": "Шанс за тик перенять технологию у соседа, который её уже имеет",
+    "tradePartner": 0.02,
+    "borderNeighbor": 0.008,
+    "conquered": 0.05,
+    "isolated": 0.0
+  },
+  "collapse": {
+    "comment": "При падении стабильности ниже порога государство теряет верхнюю эпоху",
+    "stabilityThreshold": 0.15,
+    "erasLost": 1,
+    "darkAgeYears": 150
+  }
+}
