@@ -22,6 +22,9 @@ public enum TileTexture : byte
 /// 0 базовый, 1 тень, 2 блик, 3 деталь. Цвета подставляет слой отрисовки, поэтому
 /// палитра остаётся в одном месте, а ядро не знает про MonoGame.
 /// Всё детерминировано: рисунок зависит только от биома, номера варианта и кадра.
+///
+/// Ориентир — оригинальный WorldBox: поверхность читается крупными пятнами, а не шумом.
+/// Все узоры собраны из кусков по 2–4 пикселя: одиночные точки на дальнем зуме превращаются в грязь.
 /// </summary>
 public static class TileArt
 {
@@ -110,7 +113,7 @@ public static class TileArt
                 BuildDune(tile, salt);
                 break;
             case TileTexture.Grass:
-                BuildGrass(tile, salt);
+                BuildGrass(tile, salt, true);
                 break;
             case TileTexture.Steppe:
                 BuildSteppe(tile, salt);
@@ -130,42 +133,59 @@ public static class TileArt
         }
     }
 
-    /// <summary>Вода: наклонные волны, которые смещаются от кадра к кадру.</summary>
+    /// <summary>
+    /// Вода: ровная гладь и светлые гребни-чёрточки, которые едут вбок от кадра к кадру.
+    /// Именно так вода выглядит в оригинале: не рябь по всему тайлу, а редкие штрихи на тёмной глади.
+    /// </summary>
     private static void BuildWater(Span<byte> tile, int salt, int frame)
     {
+        // Лёгкая подвижная тень полосами — глубина под поверхностью.
         for (int y = 0; y < TileSize; y++)
         {
             for (int x = 0; x < TileSize; x++)
             {
-                int wave = (x + (y * 5) + (frame * 4)) & 15;
-                byte shade = 0;
-                if (wave < 3)
+                int band = (x + (y * 3) + (frame * 2)) & 15;
+                if (band < 2)
                 {
-                    shade = 2;
+                    tile[(y * TileSize) + x] = 1;
                 }
-                else if (wave > 11)
-                {
-                    shade = 1;
-                }
-
-                if (Hash(x, y, salt) % 19u == 0u)
-                {
-                    shade = shade == 2 ? (byte)2 : (byte)1;
-                }
-
-                tile[(y * TileSize) + x] = shade;
             }
+        }
+
+        // Гребни: короткие горизонтальные штрихи с тенью под ними.
+        for (int y = 1; y < TileSize; y += 4)
+        {
+            int start = (int)((Hash(0, y, salt) + (uint)(frame * 5)) % TileSize);
+            int length = 3 + (int)(Hash(1, y, salt) % 3u);
+
+            for (int d = 0; d < length; d++)
+            {
+                int x = (start + d) % TileSize;
+                Set(tile, x, y, 2);
+                Set(tile, x, y + 1, 1);
+            }
+        }
+
+        // Редкие блёстки по два пикселя: одиночные точки издали превращаются в шум.
+        for (int spark = 0; spark < 3; spark++)
+        {
+            int x = (int)(Hash(spark, 31 + frame, salt) % TileSize);
+            int y = (int)(Hash(spark, 37 + frame, salt) % TileSize);
+            Set(tile, x, y, 2);
+            Set(tile, x + 1, y, 2);
         }
     }
 
-    /// <summary>Лёд: ровная поверхность с бликами и парой трещин.</summary>
+    /// <summary>Лёд: крупные плиты со светлыми краями и парой трещин.</summary>
     private static void BuildIce(Span<byte> tile, int salt)
     {
-        for (int i = 0; i < Pixels; i++)
+        // Плиты 8x8 с разным тоном — лёд перестаёт быть пустым белым пятном.
+        for (int y = 0; y < TileSize; y++)
         {
-            if (Hash(i & 15, i >> 4, salt) % 29u == 0u)
+            for (int x = 0; x < TileSize; x++)
             {
-                tile[i] = 2;
+                bool light = ((((x + 3) >> 3) + (y >> 3)) & 1) == 0;
+                tile[(y * TileSize) + x] = light ? (byte)0 : (byte)2;
             }
         }
 
@@ -183,12 +203,12 @@ public static class TileArt
         }
     }
 
-    /// <summary>Песок: редкие крупинки без рисунка.</summary>
+    /// <summary>Песок: мелкая крупа, полосы прибоя и редкие ракушки.</summary>
     private static void BuildSand(Span<byte> tile, int salt)
     {
         for (int i = 0; i < Pixels; i++)
         {
-            uint h = Hash(i & 15, i >> 4, salt) % 16u;
+            uint h = Hash(i & 15, i >> 4, salt) % 18u;
             if (h == 0u)
             {
                 tile[i] = 2;
@@ -198,23 +218,42 @@ public static class TileArt
                 tile[i] = 1;
             }
         }
+
+        // Две мягкие волнистые полосы — след прибоя на пляже.
+        for (int line = 0; line < 2; line++)
+        {
+            int y = 3 + (int)(Hash(line, 41, salt) % 10u);
+            for (int x = 0; x < TileSize; x++)
+            {
+                int wobble = (int)(Hash(x >> 2, line, salt) % 2u);
+                Set(tile, x, y + wobble, 1);
+            }
+        }
+
+        int shells = (int)(Hash(9, 9, salt) % 2u);
+        for (int shell = 0; shell < shells; shell++)
+        {
+            int x = (int)(Hash(shell, 51, salt) % TileSize);
+            int y = (int)(Hash(shell, 53, salt) % TileSize);
+            Set(tile, x, y, 3);
+        }
     }
 
-    /// <summary>Пустыня: дюнные полосы по диагонали.</summary>
+    /// <summary>Пустыня: крупные дюнные волны с освещённым гребнем и тенью в ложбине.</summary>
     private static void BuildDune(Span<byte> tile, int salt)
     {
         for (int y = 0; y < TileSize; y++)
         {
-            int shift = (int)(Hash(0, y, salt) % 4u);
+            int shift = (int)(Hash(0, y >> 1, salt) % 3u);
             for (int x = 0; x < TileSize; x++)
             {
-                int band = (x + (y * 2) + shift) & 7;
+                int band = (x + (y * 2) + shift) % 12;
                 byte shade = 0;
-                if (band == 0)
+                if (band == 0 || band == 1)
                 {
                     shade = 2;
                 }
-                else if (band == 4)
+                else if (band == 6 || band == 7)
                 {
                     shade = 1;
                 }
@@ -224,18 +263,31 @@ public static class TileArt
         }
     }
 
-    /// <summary>Луга: крап и кустики с бликом на кончике.</summary>
-    private static void BuildGrass(Span<byte> tile, int salt)
+    /// <summary>
+    /// Трава: та самая шахматка из оригинала — клетки 4x4 чередуют основной цвет и тень.
+    /// Сверху ложатся кустики, а на лугах — ещё и цветы детальным цветом.
+    /// </summary>
+    private static void BuildGrass(Span<byte> tile, int salt, bool flowers)
     {
-        for (int i = 0; i < Pixels; i++)
+        for (int y = 0; y < TileSize; y++)
         {
-            if (Hash(i & 15, i >> 4, salt) % 8u == 0u)
+            for (int x = 0; x < TileSize; x++)
             {
-                tile[i] = 1;
+                bool shaded = (((x >> 2) + (y >> 2)) & 1) == 1;
+                tile[(y * TileSize) + x] = shaded ? (byte)1 : (byte)0;
             }
         }
 
-        for (int tuft = 0; tuft < 7; tuft++)
+        // Пятна света по 2x1: шахматка перестаёт читаться сеткой.
+        for (int patch = 0; patch < 5; patch++)
+        {
+            int x = (int)(Hash(patch, 61, salt) % TileSize);
+            int y = (int)(Hash(patch, 67, salt) % TileSize);
+            Set(tile, x, y, 2);
+            Set(tile, x + 1, y, 2);
+        }
+
+        for (int tuft = 0; tuft < 5; tuft++)
         {
             int x = (int)(Hash(tuft, 1, salt) % TileSize);
             int y = 2 + (int)(Hash(tuft, 2, salt) % (TileSize - 3));
@@ -243,92 +295,159 @@ public static class TileArt
             Set(tile, x, y - 1, 2);
             Set(tile, x + 1, y, 1);
         }
+
+        if (!flowers)
+        {
+            return;
+        }
+
+        int count = (int)(Hash(3, 71, salt) % 3u);
+        for (int flower = 0; flower < count; flower++)
+        {
+            int x = 1 + (int)(Hash(flower, 73, salt) % (TileSize - 2));
+            int y = 1 + (int)(Hash(flower, 79, salt) % (TileSize - 2));
+            Set(tile, x, y, 3);
+            Set(tile, x, y + 1, 1);
+        }
     }
 
-    /// <summary>Степь и саванна: редкие сухие штрихи.</summary>
+    /// <summary>Степь, саванна и кустарник: выгоревшие прогалины и сухие пучки.</summary>
     private static void BuildSteppe(Span<byte> tile, int salt)
     {
-        for (int dash = 0; dash < 12; dash++)
+        // Крупные выгоревшие пятна 4x2 вместо ровного фона.
+        for (int spot = 0; spot < 6; spot++)
+        {
+            int x = (int)(Hash(spot, 83, salt) % TileSize);
+            int y = (int)(Hash(spot, 89, salt) % TileSize);
+            for (int dy = 0; dy < 2; dy++)
+            {
+                for (int dx = 0; dx < 4; dx++)
+                {
+                    Set(tile, x + dx, y + dy, 1);
+                }
+            }
+        }
+
+        for (int dash = 0; dash < 10; dash++)
         {
             int x = (int)(Hash(dash, 3, salt) % TileSize);
             int y = (int)(Hash(dash, 4, salt) % TileSize);
-            Set(tile, x, y, 1);
-            Set(tile, x + 1, y, 1);
-            if (Hash(dash, 5, salt) % 2u == 0u)
+            Set(tile, x, y, 2);
+            Set(tile, x + 1, y, 2);
+            if (Hash(dash, 5, salt) % 3u == 0u)
             {
-                Set(tile, x, y - 1, 2);
+                Set(tile, x, y - 1, 3);
             }
         }
     }
 
-    /// <summary>Лес: трава плюс три дерева ромбиком и стволом.</summary>
+    /// <summary>Лес: тёмный подлесок и четыре кроны с обводкой и бликом сверху.</summary>
     private static void BuildForest(Span<byte> tile, int salt)
-    {
-        BuildGrass(tile, salt + 13);
-
-        for (int tree = 0; tree < 3; tree++)
-        {
-            int cx = 3 + (int)(Hash(tree, 11, salt) % 11u);
-            int cy = 4 + (int)(Hash(tree, 12, salt) % 9u);
-
-            for (int dy = -2; dy <= 1; dy++)
-            {
-                int half = 2 - Math.Abs(dy);
-                for (int dx = -half; dx <= half; dx++)
-                {
-                    Set(tile, cx + dx, cy + dy, dy < 0 ? (byte)2 : (byte)3);
-                }
-            }
-
-            Set(tile, cx, cy + 2, 3);
-        }
-    }
-
-    /// <summary>Горы: угловатые пятна по 2x2 пикселя.</summary>
-    private static void BuildRock(Span<byte> tile, int salt)
-    {
-        for (int y = 0; y < TileSize; y++)
-        {
-            for (int x = 0; x < TileSize; x++)
-            {
-                uint h = Hash(x / 2, y / 2, salt) % 4u;
-                byte shade = 0;
-                if (h == 0u)
-                {
-                    shade = 2;
-                }
-                else if (h == 1u)
-                {
-                    shade = 1;
-                }
-                else if (h == 2u)
-                {
-                    shade = 3;
-                }
-
-                tile[(y * TileSize) + x] = shade;
-            }
-        }
-    }
-
-    /// <summary>Снег и пики: почти ровное поле с искрами.</summary>
-    private static void BuildSnow(Span<byte> tile, int salt)
     {
         for (int i = 0; i < Pixels; i++)
         {
-            uint h = Hash(i & 15, i >> 4, salt);
-            if (h % 11u == 0u)
-            {
-                tile[i] = 2;
-            }
-            else if (h % 23u == 1u)
+            if (Hash(i & 15, i >> 4, salt) % 5u == 0u)
             {
                 tile[i] = 1;
             }
         }
+
+        for (int tree = 0; tree < 4; tree++)
+        {
+            int cx = 3 + (int)(Hash(tree, 11, salt) % 11u);
+            int cy = 4 + (int)(Hash(tree, 12, salt) % 9u);
+            BuildCrown(tile, cx, cy);
+        }
     }
 
-    /// <summary>Болото: лужи с тёмной серединой и пятна тины.</summary>
+    /// <summary>Одна крона: шарик из основного цвета, свет сверху слева, тёмная обводка и ствол.</summary>
+    private static void BuildCrown(Span<byte> tile, int cx, int cy)
+    {
+        ReadOnlySpan<int> halves = stackalloc int[] { 1, 2, 2, 2, 1 };
+
+        for (int row = 0; row < halves.Length; row++)
+        {
+            int dy = row - 3;
+            int half = halves[row];
+
+            for (int dx = -half; dx <= half; dx++)
+            {
+                Set(tile, cx + dx, cy + dy, 0);
+            }
+
+            // Обводка по бокам: без неё кроны сливаются в одно зелёное пятно.
+            Set(tile, cx - half - 1, cy + dy, 3);
+            Set(tile, cx + half + 1, cy + dy, 3);
+        }
+
+        Set(tile, cx - 1, cy - 3, 2);
+        Set(tile, cx, cy - 3, 2);
+        Set(tile, cx - 1, cy - 2, 2);
+
+        Set(tile, cx, cy + 2, 3);
+        Set(tile, cx, cy + 3, 3);
+    }
+
+    /// <summary>Горы: гранёные блоки 4x4 со светлой вершиной и тёмной подошвой.</summary>
+    private static void BuildRock(Span<byte> tile, int salt)
+    {
+        for (int by = 0; by < TileSize; by += 4)
+        {
+            for (int bx = 0; bx < TileSize; bx += 4)
+            {
+                uint h = Hash(bx, by, salt) % 3u;
+                byte body = h switch
+                {
+                    0u => 0,
+                    1u => 1,
+                    _ => 3,
+                };
+
+                for (int dy = 0; dy < 4; dy++)
+                {
+                    for (int dx = 0; dx < 4; dx++)
+                    {
+                        Set(tile, bx + dx, by + dy, body);
+                    }
+                }
+
+                // Грань сверху и тень снизу — камень становится объёмным.
+                for (int dx = 0; dx < 4; dx++)
+                {
+                    Set(tile, bx + dx, by, 2);
+                    Set(tile, bx + dx, by + 3, 1);
+                }
+            }
+        }
+    }
+
+    /// <summary>Снег и пики: почти ровное поле, мягкие сугробы и редкие искры.</summary>
+    private static void BuildSnow(Span<byte> tile, int salt)
+    {
+        for (int drift = 0; drift < 4; drift++)
+        {
+            int x = (int)(Hash(drift, 97, salt) % TileSize);
+            int y = (int)(Hash(drift, 101, salt) % TileSize);
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                Set(tile, x + dx, y, 2);
+                if (Math.Abs(dx) < 2)
+                {
+                    Set(tile, x + dx, y + 1, 1);
+                }
+            }
+        }
+
+        for (int i = 0; i < Pixels; i++)
+        {
+            if (Hash(i & 15, i >> 4, salt) % 31u == 0u)
+            {
+                tile[i] = 2;
+            }
+        }
+    }
+
+    /// <summary>Болото: лужи с тёмной серединой, кочки и камыш.</summary>
     private static void BuildMarsh(Span<byte> tile, int salt)
     {
         for (int puddle = 0; puddle < 4; puddle++)
@@ -352,12 +471,13 @@ public static class TileArt
             Set(tile, cx, cy, 3);
         }
 
-        for (int i = 0; i < Pixels; i++)
+        // Кочки и камыш: два пикселя вверх, чтобы болото не выглядело лужайкой.
+        for (int reed = 0; reed < 5; reed++)
         {
-            if (Hash(i & 15, i >> 4, salt) % 17u == 0u)
-            {
-                tile[i] = 2;
-            }
+            int x = (int)(Hash(reed, 103, salt) % TileSize);
+            int y = 2 + (int)(Hash(reed, 107, salt) % (TileSize - 3));
+            Set(tile, x, y, 2);
+            Set(tile, x, y - 1, 2);
         }
     }
 
