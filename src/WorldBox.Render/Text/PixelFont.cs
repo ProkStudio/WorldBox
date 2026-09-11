@@ -114,7 +114,7 @@ public sealed class PixelFont : IDisposable
             int glyph = GlyphIndex(symbol);
             if (glyph >= 0)
             {
-                int inkWidth = Math.Min(PixelFontData.MaxWidth, _advance[glyph]);
+                int inkWidth = Math.Min(PixelFontData.MaxWidth, (int)_advance[glyph]);
                 var source = new Rectangle(glyph * PixelFontData.MaxWidth, 0, inkWidth, cell);
                 var destination = new Rectangle(x, y, inkWidth * scale, cell * scale);
                 batch.Draw(_atlas, destination, source, color);
