@@ -1,3 +1,4 @@
+using WorldBox.Core.Eras;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.World;
 
@@ -7,19 +8,28 @@ namespace WorldBox.Core.People;
 /// Жизнь людей за один тик: старение, еда и голод, переезд на соседний тайл, роды и смерть.
 /// Никаких списков и LINQ: один проход по массивам, ноль аллокаций.
 /// Все случайности берутся из единственного генератора мира, поэтому партия повторяема.
+///
+/// Настройки посчитаны на опорный пятилетний тик. Когда система эпох сжимает время,
+/// шансы пересчитываются на новую длину тика: иначе при двадцати пяти годах в тике
+/// люди умирали бы от старости быстрее, чем успевали рожать, и мир вымирал бы в палеолите.
 /// </summary>
 public sealed class PopulationSystem : ISimulationSystem
 {
+    /// <summary>Длина тика в годах, на которую посчитаны числа в PopulationSettings.</summary>
+    public const float ReferenceYears = 5f;
+
     private static readonly int[] NeighborX = { 1, 1, 0, -1, -1, -1, 0, 1 };
     private static readonly int[] NeighborY = { 0, 1, 1, 1, 0, -1, -1, -1 };
 
     private readonly PopulationSettings _settings;
+    private readonly TribeTech? _tech;
 
-    public PopulationSystem(Population people, PopulationSettings? settings = null)
+    public PopulationSystem(Population people, PopulationSettings? settings = null, TribeTech? tech = null)
     {
         ArgumentNullException.ThrowIfNull(people);
         People = people;
         _settings = settings ?? PopulationSettings.Default;
+        _tech = tech;
     }
 
     public Population People { get; }
@@ -43,8 +53,20 @@ public sealed class PopulationSystem : ISimulationSystem
         Population people = People;
         PopulationSettings settings = _settings;
         Rng rng = world.Rng;
+        TribeTech? tech = _tech;
+        int techCapacity = tech?.Capacity ?? 0;
 
         float years = world.YearsPerTick;
+        float ratio = years > 0f ? years / ReferenceYears : 1f;
+
+        // Пересчёт делается один раз на тик, а не на каждого жителя.
+        float oldAgeChance = Compound(settings.OldAgeChance, ratio);
+        float starveChance = Compound(settings.StarveChance, ratio);
+        float moveChance = Compound(settings.MoveChance, ratio);
+        float birthChance = Compound(settings.BirthChance, ratio);
+        float hungerGain = settings.HungerGain * ratio;
+        float foodFactor = settings.FoodFactor * ratio;
+
         int width = map.Width;
         int height = map.Height;
 
@@ -69,9 +91,19 @@ public sealed class PopulationSystem : ISimulationSystem
 
             float fertility = map.Fertility[index];
             int density = people.DensityAt(index);
-            float food = fertility * settings.FoodFactor / (1f + (density * settings.Crowding));
+            float food = fertility * foodFactor / (1f + (density * settings.Crowding));
 
-            float hunger = people.Hunger[i] + settings.HungerGain - food;
+            // С эпохами один работник кормит больше: пашня, плуг, фабрики.
+            if (tech != null)
+            {
+                int tribe = people.Tribe[i];
+                if ((uint)tribe < (uint)techCapacity)
+                {
+                    food *= tech.FoodMultiplier[tribe];
+                }
+            }
+
+            float hunger = people.Hunger[i] + hungerGain - food;
             if (hunger < 0f)
             {
                 hunger = 0f;
@@ -83,21 +115,21 @@ public sealed class PopulationSystem : ISimulationSystem
 
             people.Hunger[i] = hunger;
 
-            if (age > settings.MaxAge && rng.Chance(settings.OldAgeChance))
+            if (age > settings.MaxAge && rng.Chance(oldAgeChance))
             {
                 people.Kill(i);
                 deaths++;
                 continue;
             }
 
-            if (hunger >= 1f && rng.Chance(settings.StarveChance))
+            if (hunger >= 1f && rng.Chance(starveChance))
             {
                 people.Kill(i);
                 deaths++;
                 continue;
             }
 
-            if (rng.Chance(settings.MoveChance))
+            if (rng.Chance(moveChance))
             {
                 int side = rng.NextInt(8);
                 int nx = x + NeighborX[side];
@@ -128,7 +160,7 @@ public sealed class PopulationSystem : ISimulationSystem
                 && age <= settings.LastFertileAge
                 && hunger < settings.BirthHungerLimit
                 && people.HasRoom
-                && rng.Chance(settings.BirthChance * (1f - hunger)))
+                && rng.Chance(birthChance * (1f - hunger)))
             {
                 if (people.Spawn(x, y, people.Tribe[i], 0f) >= 0)
                 {
@@ -139,5 +171,29 @@ public sealed class PopulationSystem : ISimulationSystem
 
         LastBirths = births;
         LastDeaths = deaths;
+    }
+
+    /// <summary>
+    /// Переводит шанс с опорного тика на текущий по правилу «хотя бы раз за несколько лет».
+    /// Рождаемость и смертность меняются вместе, поэтому баланс не рассыпается при сжатии времени.
+    /// </summary>
+    private static float Compound(float chance, float ratio)
+    {
+        if (chance <= 0f)
+        {
+            return 0f;
+        }
+
+        if (chance >= 1f)
+        {
+            return 1f;
+        }
+
+        if (ratio > 0.999f && ratio < 1.001f)
+        {
+            return chance;
+        }
+
+        return 1f - MathF.Pow(1f - chance, ratio);
     }
 }

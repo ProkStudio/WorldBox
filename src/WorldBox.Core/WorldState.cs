@@ -41,10 +41,16 @@ public sealed class WorldState
     /// <summary>Сколько тиков прошло с начала партии. Двигается только через SimulationLoop.</summary>
     public long Tick { get; internal set; }
 
-    /// <summary>Сколько игровых лет в одном тике. Срез S4 будет менять это по эпохам из data/eras.json.</summary>
+    /// <summary>Сколько игровых лет в одном тике. Система эпох меняет это по data/eras.json.</summary>
     public float YearsPerTick { get; set; } = 5f;
 
-    public double Year => StartYear + (Tick * YearsPerTick);
+    /// <summary>
+    /// Сколько игровых лет уже прошло. Копится в SimulationLoop по тикам,
+    /// поэтому смена сжатия времени не переписывает прошлое и календарь не прыгает назад.
+    /// </summary>
+    public double YearsElapsed { get; internal set; }
+
+    public double Year => StartYear + YearsElapsed;
 
     /// <summary>Замеры последних тиков. На саму симуляцию не влияют.</summary>
     public FrameStats TickStats { get; } = new FrameStats(120);
@@ -75,6 +81,7 @@ public sealed class WorldState
             hash = Mix(hash, (ulong)Height);
             hash = Mix(hash, (ulong)(uint)Seed);
             hash = Mix(hash, (ulong)Tick);
+            hash = Mix(hash, (ulong)(long)(YearsElapsed * 16.0));
             Span<uint> state = stackalloc uint[4];
             Rng.GetState(state);
             for (int i = 0; i < state.Length; i++)

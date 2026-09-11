@@ -40,6 +40,9 @@ public sealed class SimulationLoop
         long tickStart = Stopwatch.GetTimestamp();
         World.Tick++;
 
+        // Годы копятся, а не считаются умножением: иначе при смене эпохи календарь прыгал бы назад.
+        World.YearsElapsed += World.YearsPerTick;
+
         for (int i = 0; i < _systems.Length; i++)
         {
             ISimulationSystem system = _systems[i];
