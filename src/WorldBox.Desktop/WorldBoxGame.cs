@@ -15,7 +15,7 @@ namespace WorldBox.Desktop;
 
 /// <summary>
 /// Окно и игровой цикл. На срезе S1 здесь живая карта мира: биомы, реки, ресурсы,
-/// режимы карты, мини-карта и генерация нового мира по клавише. Жители появятся на S3.
+/// режимы карты, мини-карта, легенда и генерация нового мира по клавише. Жители появятся на S3.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
@@ -31,6 +31,7 @@ public sealed class WorldBoxGame : Game
     private readonly Stopwatch _frameWatch = new Stopwatch();
     private readonly DebugOverlay _overlay = new DebugOverlay();
     private readonly TileInspector _inspector = new TileInspector();
+    private readonly BiomeLegend _legend = new BiomeLegend();
     private readonly int _size;
 
     private WorldState _world = null!;
@@ -73,8 +74,10 @@ public sealed class WorldBoxGame : Game
         Strings.Load();
         Window.Title = Strings.Get("app.title");
         Window.AllowUserResizing = true;
-        Window.ClientSizeChanged += OnClientSizeChanged;
+
+        // Камера создаётся раньше подписки: событие смены размера трогает камеру.
         _camera = new Camera2D(_world.Width, _world.Height, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        Window.ClientSizeChanged += OnClientSizeChanged;
         base.Initialize();
     }
 
@@ -146,6 +149,11 @@ public sealed class WorldBoxGame : Game
         if (_input.WasPressed(Keys.F1))
         {
             _overlay.HintVisible = !_overlay.HintVisible;
+        }
+
+        if (_input.WasPressed(Keys.L))
+        {
+            _legend.Visible = !_legend.Visible;
         }
 
         if (_input.WasPressed(Keys.M))
@@ -323,6 +331,7 @@ public sealed class WorldBoxGame : Game
         int viewportHeight = GraphicsDevice.Viewport.Height;
 
         _overlay.Draw(_batch, _font, _primitives, in info, viewportWidth, viewportHeight);
+        _legend.Draw(_batch, _font, _primitives, viewportWidth);
         _minimap?.Draw(_batch, _primitives, _camera);
         _inspector.Draw(_batch, _font, _primitives, _map, _mode, cursorX, cursorY, inside, _generationMs, viewportHeight);
     }
@@ -336,6 +345,7 @@ public sealed class WorldBoxGame : Game
         }
 
         _minimap?.Rebuild(mode);
+        _legend.Rebuild(_map, mode);
     }
 
     /// <summary>Считает новую карту и начинает партию заново. Графика здесь не трогается.</summary>
@@ -366,6 +376,8 @@ public sealed class WorldBoxGame : Game
         _minimap = new Minimap(GraphicsDevice, _map);
         _minimap.Rebuild(_mode);
         _minimap.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+
+        _legend.Rebuild(_map, _mode);
     }
 
     private void OnClientSizeChanged(object? sender, EventArgs e)
