@@ -7,15 +7,13 @@ namespace WorldBox.Render;
 
 /// <summary>
 /// Атлас процедурных тайлов 16x16. Собирается один раз при старте: для каждого биома
-/// четыре варианта рисунка и четыре кадра анимации. Цвет берётся из <see cref="BiomePalette"/>,
-/// рисунок — из <see cref="TileArt"/>. Размер атласа 256x304 пикселя, это менее сотни килобайт.
+/// четыре варианта рисунка и четыре кадра анимации. Рисунок даёт <see cref="TileArt"/>,
+/// а цвет каждого из четырёх оттенков берётся из <see cref="ArtPalette"/>.
+/// Размер атласа 256x304 пикселя, это менее сотни килобайт.
 /// </summary>
 public sealed class TileAtlas : IDisposable
 {
     public const int TileSize = TileArt.TileSize;
-
-    // 0 базовый, 1 тень, 2 блик, 3 деталь.
-    private static readonly float[] ShadeFactors = { 1f, 0.84f, 1.18f, 0.66f };
 
     private readonly Texture2D _texture;
     private readonly int _columns;
@@ -30,12 +28,17 @@ public sealed class TileAtlas : IDisposable
         int height = Biomes.Count * TileSize;
         var pixels = new Color[width * height];
         Span<byte> tile = stackalloc byte[TileArt.Pixels];
+        Span<Color> ramp = stackalloc Color[ArtPalette.Shades];
 
         for (int index = 0; index < Biomes.Count; index++)
         {
             var biome = (Biome)index;
-            Color baseColor = BiomePalette.Of(biome);
             int frames = TileArt.FrameCount(biome);
+
+            for (int shade = 0; shade < ArtPalette.Shades; shade++)
+            {
+                ramp[shade] = ArtPalette.Ramp(biome, shade).ToColor();
+            }
 
             for (int variant = 0; variant < TileArt.Variants; variant++)
             {
@@ -51,7 +54,8 @@ public sealed class TileAtlas : IDisposable
                         int row = (originY + y) * width;
                         for (int x = 0; x < TileSize; x++)
                         {
-                            pixels[row + originX + x] = Shade(baseColor, tile[(y * TileSize) + x]);
+                            byte shade = tile[(y * TileSize) + x];
+                            pixels[row + originX + x] = ramp[shade < ArtPalette.Shades ? shade : 0];
                         }
                     }
                 }
@@ -67,6 +71,9 @@ public sealed class TileAtlas : IDisposable
     public int Width => _texture.Width;
 
     public int Height => _texture.Height;
+
+    /// <summary>Сколько столбцов в атласе: варианты рисунка умножить на кадры анимации.</summary>
+    public int Columns => _columns;
 
     /// <summary>Сколько кадров анимации у этого биома.</summary>
     public static int FrameCount(Biome biome)
@@ -100,14 +107,5 @@ public sealed class TileAtlas : IDisposable
 
         _disposed = true;
         _texture.Dispose();
-    }
-
-    private static Color Shade(Color color, byte shade)
-    {
-        float factor = shade < ShadeFactors.Length ? ShadeFactors[shade] : 1f;
-        return new Color(
-            (int)MathHelper.Clamp(color.R * factor, 0f, 255f),
-            (int)MathHelper.Clamp(color.G * factor, 0f, 255f),
-            (int)MathHelper.Clamp(color.B * factor, 0f, 255f));
     }
 }

@@ -20,7 +20,6 @@ public sealed class TileSpriteRenderer : IDisposable
     // чёрные щели между соседями на дробном зуме.
     private const float Overlap = 1.01f;
     private const double FramesPerSecond = 5.0;
-    private const float FoamFactor = 1.35f;
 
     private static readonly int[] EdgeDx = { 0, 1, 0, -1 };
     private static readonly int[] EdgeDy = { -1, 0, 1, 0 };
@@ -65,11 +64,10 @@ public sealed class TileSpriteRenderer : IDisposable
         for (int index = 0; index < Biomes.Count; index++)
         {
             var biome = (Biome)index;
-            Color color = BiomePalette.Of(biome);
             _priority[index] = (byte)EdgeArt.Priority(biome);
             _isWaterArt[index] = TileArt.IsAnimated(biome);
-            _colors[index] = color;
-            _foam[index] = Lighten(color, FoamFactor);
+            _colors[index] = ArtPalette.Base(biome).ToColor();
+            _foam[index] = ArtPalette.Foam(biome).ToColor();
         }
     }
 
@@ -195,13 +193,5 @@ public sealed class TileSpriteRenderer : IDisposable
         _disposed = true;
         _atlas.Dispose();
         _edges.Dispose();
-    }
-
-    private static Color Lighten(Color color, float factor)
-    {
-        return new Color(
-            (int)MathHelper.Clamp(color.R * factor, 0f, 255f),
-            (int)MathHelper.Clamp(color.G * factor, 0f, 255f),
-            (int)MathHelper.Clamp(color.B * factor, 0f, 255f));
     }
 }
