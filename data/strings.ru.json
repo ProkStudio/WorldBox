@@ -1,0 +1,39 @@
+{
+  "app.title": "WorldBox",
+
+  "hud.fps": "ФПС",
+  "hud.frame": "кадр",
+  "hud.worst": "худший 1%",
+  "hud.sim": "тик",
+  "hud.ticks": "тиков",
+  "hud.speed": "скорость",
+  "hud.year": "год",
+  "hud.zoom": "зум",
+  "hud.visible": "видно тайлов",
+  "hud.cursor": "курсор",
+  "hud.world": "мир",
+  "hud.behind": "НЕ УСПЕВАЕМ: тики отбрасываются",
+  "hud.ms": "мс",
+  "hud.px": "пикс на тайл",
+
+  "hint.line1": "ПКМ — двигать карту, колесо — зум, WASD — шагать, Пробел — пауза",
+  "hint.line2": "1-4 — скорость, Home — весь мир, F1 — подсказка, F3 — отладка, Esc — выход",
+
+  "speed.paused": "Пауза",
+  "speed.x1": "x1",
+  "speed.x4": "x4",
+  "speed.x16": "x16",
+  "speed.x64": "x64",
+
+  "era.paleolithic": "Каменный век",
+  "era.neolithic": "Неолит",
+  "era.bronze": "Бронзовый век",
+  "era.iron": "Железный век",
+  "era.antiquity": "Античность",
+  "era.medieval": "Средние века",
+  "era.gunpowder": "Эпоха пороха",
+  "era.industrial": "Промышленная революция",
+  "era.oil": "Эпоха нефти",
+  "era.modern": "Современность",
+  "era.space": "Космическая эра"
+}
