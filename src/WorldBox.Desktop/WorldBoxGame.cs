@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -106,6 +107,9 @@ public sealed class WorldBoxGame : Game
     private bool _peopleVisible = true;
     private bool _bordersVisible = true;
     private bool _decorVisible = true;
+
+    /// <summary>Нажали F7: следующий кадр допишет свой замер в frames.txt.</summary>
+    private bool _frameReportRequested;
 
     public WorldBoxGame(int seed, int worldSize)
     {
@@ -267,6 +271,12 @@ public sealed class WorldBoxGame : Game
             }
 
             _buildings.Visible = _decorVisible;
+        }
+
+        if (_input.WasPressed(Keys.F7))
+        {
+            // Числа с экрана глазом не спишешь: по этой клавише замер кадров уходит в файл.
+            _frameReportRequested = true;
         }
 
         if (_input.WasPressed(Keys.E))
@@ -629,6 +639,12 @@ public sealed class WorldBoxGame : Game
             LargestTribe = _tribes.NameOf(largest),
         };
 
+        if (_frameReportRequested)
+        {
+            _frameReportRequested = false;
+            WriteFrameReport(in info);
+        }
+
         int viewportWidth = GraphicsDevice.Viewport.Width;
         int viewportHeight = GraphicsDevice.Viewport.Height;
 
@@ -751,6 +767,65 @@ public sealed class WorldBoxGame : Game
         _simStats.Clear();
         _borders?.Invalidate();
     }
+
+    /// <summary>
+    /// Дописывает текущий замер кадров в frames.txt в рабочей папке игры.
+    /// Таблицу кадров в docs/PERF.md иначе пришлось бы списывать с экрана глазом,
+    /// а так каждое нажатие F7 добавляет в файл готовую строку для таблицы.
+    /// </summary>
+    private void WriteFrameReport(in OverlayInfo info)
+    {
+        var text = new StringBuilder(700);
+        string scene = info.WorldWidth + "x" + info.WorldHeight
+            + ", карта " + Strings.Get(MapModes.NameKey(_mode))
+            + ", зум " + info.Zoom.ToString("0.0") + " пкс"
+            + ", тайлов по высоте " + (int)info.VisibleTiles;
+
+        text.Append("=== замер кадров ").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")).AppendLine(" ===");
+        text.Append("окно: ").Append(GraphicsDevice.Viewport.Width).Append('x').AppendLine(GraphicsDevice.Viewport.Height.ToString());
+        text.Append("сцена: ").AppendLine(scene);
+        text.Append("fps: ").Append(info.Fps.ToString("0"))
+            .Append("   кадр: ").Append(info.FrameMs.ToString("0.00")).Append(" мс")
+            .Append("   худший 1%: ").Append(info.FrameMsWorst.ToString("0.00")).Append(" мс")
+            .Append("   симуляция: ").Append(info.SimMs.ToString("0.000")).AppendLine(" мс/тик");
+        text.Append("мир: тик ").Append(info.Ticks)
+            .Append(", год ").Append(info.Year.ToString("0"))
+            .Append(", эпоха ").Append(info.EraName ?? "-")
+            .Append(", скорость ").AppendLine(info.Speed.ToString());
+        text.Append("жизнь: людей ").Append(info.People)
+            .Append(", народов ").Append(info.Tribes)
+            .Append(", поселений ").AppendLine(info.Settlements.ToString());
+        text.Append("слои: ближний план ").Append(OnOff(_detailTiles))
+            .Append(", люди ").Append(OnOff(_peopleVisible))
+            .Append(", декор ").Append(OnOff(_decorVisible))
+            .Append(", границы ").Append(OnOff(_bordersVisible))
+            .Append(", торговые пути ").Append(OnOff(_tradeRenderer.Visible))
+            .Append(", панель народов ").Append(OnOff(_tribePanel.Visible))
+            .Append(", легенда ").AppendLine(OnOff(_legend.Visible));
+        text.Append("| ").Append(DateTime.Now.ToString("yyyy-MM-dd"))
+            .Append(" | | ").Append(scene)
+            .Append(" | ").Append(info.Fps.ToString("0"))
+            .Append(" | ").Append(info.FrameMs.ToString("0.00"))
+            .Append(" | ").Append(info.FrameMsWorst.ToString("0.00"))
+            .AppendLine(" | |");
+        text.AppendLine();
+
+        try
+        {
+            File.AppendAllText(Path.Combine(Environment.CurrentDirectory, "frames.txt"), text.ToString(), Encoding.UTF8);
+        }
+        catch (IOException)
+        {
+            // Замер — дело необязательное: если файл занят, игра просто играет дальше.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // То же самое: папка только для чтения — не повод ронять игру.
+        }
+    }
+
+    /// <summary>Короткая пометка для отчёта: включён слой или нет.</summary>
+    private static string OnOff(bool value) => value ? "да" : "нет";
 
     /// <summary>Собирает цикл из того, что удалось загрузить: без таблиц игра всё равно живая.</summary>
     private SimulationLoop BuildLoop()
