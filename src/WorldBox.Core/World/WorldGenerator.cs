@@ -7,6 +7,12 @@ namespace WorldBox.Core.World;
 /// </summary>
 public static class WorldGenerator
 {
+    /// <summary>
+    /// Где у мира полюс. Края карты срезаны в океан (см. BuildElevation), поэтому суша живёт
+    /// только внутри этой доли высоты. Широта тянется именно до сюда.
+    /// </summary>
+    private const float PolarEdge = 0.82f;
+
     private static readonly int[] NeighborX = { 1, 1, 0, -1, -1, -1, 0, 1 };
     private static readonly int[] NeighborY = { 0, 1, 1, 1, 0, -1, -1, -1 };
 
@@ -23,7 +29,7 @@ public static class WorldGenerator
         BuildTemperature(map, rng);
         BuildMoisture(map, rng, settings);
         BuildRivers(map, settings);
-        AssignBiomes(map);
+        AssignBiomes(map, settings);
         BuildFertility(map);
         PlaceResources(map, rng);
         map.Recount();
@@ -101,7 +107,10 @@ public static class WorldGenerator
 
         for (int y = 0; y < map.Height; y++)
         {
-            float latitude = MathF.Abs(((y * invHeight) * 2f) - 1f);
+            // Края карты всегда океан, поэтому суша живёт внутри полосы |широта| < PolarEdge.
+            // Широту растягиваем на эту полосу: иначе у мира нет ни одного холодного берега,
+            // вся суша оказывается тропиками и тундра с тайгой не появляются никогда.
+            float latitude = Math.Clamp(MathF.Abs(((y * invHeight) * 2f) - 1f) / PolarEdge, 0f, 1f);
             float bandTemperature = 1f - (latitude * latitude * 0.85f) - (latitude * 0.15f);
 
             for (int x = 0; x < map.Width; x++)
@@ -125,10 +134,18 @@ public static class WorldGenerator
         var noise = new Noise(rng.NextInt(int.MaxValue));
         int[] distance = DistanceToWater(map);
         int reach = Math.Max(1, settings.OceanMoistureReach);
+        float invHeight = 1f / Math.Max(1, map.Height - 1);
+        float beltWidth = MathF.Max(settings.DryBeltWidth, 0.01f);
 
         // Ветер дует с запада: горы слева забирают дождь и сушат всё, что справа.
         for (int y = 0; y < map.Height; y++)
         {
+            float latitude = Math.Clamp(MathF.Abs(((y * invHeight) * 2f) - 1f) / PolarEdge, 0f, 1f);
+
+            // Пояс пустынь: на этой широте воздух опускается и дождя почти нет.
+            float belt = (latitude - settings.DryBeltLatitude) / beltWidth;
+            float dryBelt = 1f - (settings.DryBeltStrength * MathF.Exp(-belt * belt));
+
             float barrier = 0f;
             for (int x = 0; x < map.Width; x++)
             {
@@ -136,18 +153,66 @@ public static class WorldGenerator
                 float elevation = map.Elevation[i];
                 barrier = MathF.Max(barrier * 0.985f, elevation);
 
+                // Влага с моря падает нелинейно: середина материка суше берега заметно сильнее.
                 float fromOcean = 1f - (Math.Min(distance[i], reach) / (float)reach);
+                fromOcean *= fromOcean;
                 float random = noise.Fbm(x * 0.016f, y * 0.016f, 5);
-                float value = (fromOcean * 0.52f) + (random * 0.48f);
+                float value = (fromOcean * 0.45f) + (random * 0.55f);
 
                 float shadow = MathF.Max(0f, barrier - elevation);
                 value -= shadow * settings.RainShadow;
+                value *= dryBelt;
 
                 // Холодный воздух держит меньше воды.
-                value *= 0.55f + (0.45f * map.Temperature[i]);
+                value *= 0.70f + (0.30f * map.Temperature[i]);
 
                 map.Moisture[i] = Math.Clamp(value, 0f, 1f);
             }
+        }
+
+        NormalizeMoisture(map);
+    }
+
+    /// <summary>
+    /// Растягивает влажность суши на весь диапазон 0..1 по рангу.
+    /// Шум сам по себе кучкуется около середины, и тогда вся суша превращается в один луг.
+    /// Ранг сохраняет рисунок «где суше», но гарантирует, что сухие и мокрые пояса есть на любом сиде.
+    /// </summary>
+    private static void NormalizeMoisture(WorldMap map)
+    {
+        const int Buckets = 4096;
+        var histogram = new int[Buckets];
+        int land = 0;
+
+        for (int i = 0; i < map.TileCount; i++)
+        {
+            if (map.Elevation[i] < map.SeaLevel)
+            {
+                continue;
+            }
+
+            histogram[Math.Clamp((int)(map.Moisture[i] * Buckets), 0, Buckets - 1)]++;
+            land++;
+        }
+
+        if (land == 0)
+        {
+            return;
+        }
+
+        var rank = new float[Buckets];
+        int accumulated = 0;
+        for (int b = 0; b < Buckets; b++)
+        {
+            int here = histogram[b];
+            rank[b] = (accumulated + (here * 0.5f)) / land;
+            accumulated += here;
+        }
+
+        for (int i = 0; i < map.TileCount; i++)
+        {
+            int bucket = Math.Clamp((int)(map.Moisture[i] * Buckets), 0, Buckets - 1);
+            map.Moisture[i] = Math.Clamp(rank[bucket], 0f, 1f);
         }
     }
 
@@ -283,9 +348,75 @@ public static class WorldGenerator
         map.RiverThreshold = MathF.Max(flows[riverIndex], 6f);
     }
 
-    private static void AssignBiomes(WorldMap map)
+    /// <summary>
+    /// Где начинаются горы и вершины, считаем по доле суши, а не по абсолютной высоте:
+    /// иначе на гористом сиде хребты съедают треть материка, а на ровном гор нет вообще.
+    /// Нижние границы оставлены, чтобы равнина не объявляла себя хребтом.
+    /// </summary>
+    private static void PickMountainLevels(WorldMap map, WorldGenSettings settings, out float mountainAbove, out float peakAbove)
+    {
+        const int Buckets = 1024;
+        var histogram = new int[Buckets];
+        int land = 0;
+
+        for (int i = 0; i < map.TileCount; i++)
+        {
+            float above = map.Elevation[i] - map.SeaLevel;
+            if (above < 0f)
+            {
+                continue;
+            }
+
+            histogram[Math.Clamp((int)(above * Buckets), 0, Buckets - 1)]++;
+            land++;
+        }
+
+        mountainAbove = 0.16f;
+        peakAbove = 0.26f;
+        if (land == 0)
+        {
+            return;
+        }
+
+        int mountainTarget = (int)(land * Math.Clamp(settings.MountainShare, 0.01f, 0.5f));
+        int peakTarget = (int)(land * Math.Clamp(settings.PeakShare, 0.002f, 0.3f));
+
+        int accumulated = 0;
+        float mountainLevel = 0f;
+        float peakLevel = 0f;
+        bool peakFound = false;
+        bool mountainFound = false;
+
+        for (int b = Buckets - 1; b >= 0; b--)
+        {
+            accumulated += histogram[b];
+            if (!peakFound && accumulated >= peakTarget)
+            {
+                peakLevel = b / (float)Buckets;
+                peakFound = true;
+            }
+
+            if (accumulated >= mountainTarget)
+            {
+                mountainLevel = b / (float)Buckets;
+                mountainFound = true;
+                break;
+            }
+        }
+
+        if (!mountainFound)
+        {
+            return;
+        }
+
+        mountainAbove = MathF.Max(mountainLevel, 0.10f);
+        peakAbove = MathF.Max(peakFound ? peakLevel : mountainAbove + 0.10f, mountainAbove + 0.04f);
+    }
+
+    private static void AssignBiomes(WorldMap map, WorldGenSettings settings)
     {
         float sea = map.SeaLevel;
+        PickMountainLevels(map, settings, out float mountainAbove, out float peakAbove);
         for (int y = 0; y < map.Height; y++)
         {
             for (int x = 0; x < map.Width; x++)
@@ -316,11 +447,11 @@ public static class WorldGenerator
                 {
                     biome = Biome.River;
                 }
-                else if (above > 0.26f)
+                else if (above > peakAbove)
                 {
                     biome = Biome.Peak;
                 }
-                else if (above > 0.16f)
+                else if (above > mountainAbove)
                 {
                     biome = temperature < 0.14f ? Biome.Glacier : Biome.Mountain;
                 }
@@ -328,8 +459,10 @@ public static class WorldGenerator
                 {
                     biome = temperature < 0.16f ? Biome.Tundra : Biome.Beach;
                 }
-                else if (moisture > 0.72f && above < 0.05f && temperature > 0.25f)
+                else if (above < 0.035f && temperature > 0.25f
+                    && (moisture > 0.86f || (moisture > 0.66f && map.Flow[i] >= map.RiverThreshold * 0.45f)))
                 {
+                    // Болото — это мокрая низина или разлив рядом с рекой, а не половина материка.
                     biome = Biome.Marsh;
                 }
                 else
@@ -355,19 +488,20 @@ public static class WorldGenerator
             return moisture < 0.26f ? Biome.Tundra : Biome.Taiga;
         }
 
-        if (temperature < 0.50f)
+        if (temperature < 0.52f)
         {
-            if (moisture < 0.18f)
+            // Сухо и прохладно — это степь, а не пустыня: полоса шире, чем у жарких широт.
+            if (moisture < 0.26f)
             {
                 return Biome.Steppe;
             }
 
-            if (moisture < 0.34f)
+            if (moisture < 0.40f)
             {
                 return Biome.Shrubland;
             }
 
-            if (moisture < 0.58f)
+            if (moisture < 0.62f)
             {
                 return Biome.Grassland;
             }
