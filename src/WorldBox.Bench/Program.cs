@@ -4,6 +4,7 @@ using WorldBox.Core;
 using WorldBox.Core.Economy;
 using WorldBox.Core.Eras;
 using WorldBox.Core.People;
+using WorldBox.Core.Roads;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Tribes;
 using WorldBox.Core.World;
@@ -73,6 +74,10 @@ var populationSystem = new PopulationSystem(people, null, tech);
 var settlementSystem = new SettlementSystem(people, tribes, settlements, territory);
 var territorySystem = new TerritorySystem(tribes, territory);
 
+// Дороги входят в замер: поиск пути — самая дорогая часть тика после жителей.
+var roads = new RoadNetwork(size, size);
+var roadSystem = new RoadSystem(tribes, settlements, roads);
+
 // Хозяйство собирается раньше эпох: эпохам нужны торговые ресурсы и надбавка к развитию.
 TribeMarket? market = null;
 TradeNetwork? routes = null;
@@ -91,7 +96,7 @@ if (table != null)
     eraSystem = new EraSystem(table, tribes, territory, tech, market);
 }
 
-var systems = new List<ISimulationSystem> { populationSystem, settlementSystem, territorySystem };
+var systems = new List<ISimulationSystem> { populationSystem, settlementSystem, territorySystem, roadSystem };
 if (economySystem != null)
 {
     systems.Add(economySystem);
@@ -129,6 +134,27 @@ Console.WriteLine(
     populationSystem.LastBirths,
     populationSystem.LastDeaths);
 Console.WriteLine("Народы: {0}, поселения: {1}", tribes.Count, settlements.Count);
+
+var roadTiles = new int[RoadNetwork.LevelCount];
+for (int i = 0; i < roads.Level.Length; i++)
+{
+    roadTiles[roads.Level[i]]++;
+}
+
+Console.WriteLine(
+    "Дороги: маршрутов {0} из {1}, тайлов полотна {2}, снято за последний прогон {3}",
+    roads.Count,
+    roads.Capacity,
+    roads.Tiles,
+    roadSystem.LastRemoved);
+Console.WriteLine(
+    "  тропы {0}, грунтовки {1}, тракты {2}, рельсы {3}, шоссе {4}",
+    roadTiles[RoadNetwork.Trail],
+    roadTiles[RoadNetwork.Paved],
+    roadTiles[RoadNetwork.Highway],
+    roadTiles[RoadNetwork.Rail],
+    roadTiles[RoadNetwork.Motorway]);
+Console.WriteLine("  контрольная сумма дорог: {0}", roads.Checksum());
 Console.WriteLine("Год: {0:F0}, лет в тике: {1:F2}", world.Year, world.YearsPerTick);
 Console.WriteLine();
 

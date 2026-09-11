@@ -8,6 +8,7 @@ using WorldBox.Core.Diagnostics;
 using WorldBox.Core.Economy;
 using WorldBox.Core.Eras;
 using WorldBox.Core.People;
+using WorldBox.Core.Roads;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Time;
 using WorldBox.Core.Tribes;
@@ -55,6 +56,7 @@ public sealed class WorldBoxGame : Game
     private readonly MarketPanel _marketPanel = new MarketPanel();
     private readonly PeopleRenderer _peopleRenderer = new PeopleRenderer();
     private readonly TradeRenderer _tradeRenderer = new TradeRenderer { Visible = false };
+    private readonly TrafficRenderer _traffic = new TrafficRenderer();
     private readonly Toolbar _toolbar = new Toolbar();
     private readonly NamePlates _plates = new NamePlates();
     private readonly int _size;
@@ -81,6 +83,8 @@ public sealed class WorldBoxGame : Game
     private Territory _territory = null!;
     private SettlementSystem _settlementSystem = null!;
     private TerritorySystem _territorySystem = null!;
+    private RoadNetwork _roads = null!;
+    private RoadSystem _roadSystem = null!;
     private TribeTech _tech = null!;
     private EraSystem? _eraSystem;
     private TribeMarket? _market;
@@ -97,6 +101,7 @@ public sealed class WorldBoxGame : Game
     private TileSpriteRenderer? _sprites;
     private DecorRenderer? _decor;
     private TerritoryRenderer? _borders;
+    private RoadRenderer? _roadRenderer;
     private Minimap? _minimap;
 
     private MapMode _mode = MapMode.Terrain;
@@ -108,6 +113,10 @@ public sealed class WorldBoxGame : Game
     private bool _peopleVisible = true;
     private bool _bordersVisible = true;
     private bool _decorVisible = true;
+    private bool _roadsVisible = true;
+
+    /// <summary>Игровое время для транспорта. На паузе не растёт, поэтому всё замирает вместе с миром.</summary>
+    private float _trafficSeconds;
 
     /// <summary>Нажали F7: следующий кадр допишет свой замер в frames.txt.</summary>
     private bool _frameReportRequested;
@@ -184,6 +193,7 @@ public sealed class WorldBoxGame : Game
         _sprites?.Dispose();
         _decor?.Dispose();
         _borders?.Dispose();
+        _roadRenderer?.Dispose();
         _minimap?.Dispose();
         _decorAtlas.Dispose();
         _ui.Dispose();
@@ -206,6 +216,9 @@ public sealed class WorldBoxGame : Game
         HandleInput((float)deltaSeconds);
         _camera.Update((float)deltaSeconds);
         _tiles?.Update(8);
+
+        // Транспорт едет по игровому времени: на паузе стоит, на ускорении торопится.
+        _trafficSeconds += (float)deltaSeconds * TrafficFactor();
 
         int ticks = _clock.Advance(deltaSeconds);
         if (ticks > 0)
@@ -278,6 +291,12 @@ public sealed class WorldBoxGame : Game
         {
             // Числа с экрана глазом не спишешь: по этой клавише замер кадров уходит в файл.
             _frameReportRequested = true;
+        }
+
+        if (_input.WasPressed(Keys.F8))
+        {
+            // Дороги и транспорт гаснут вместе: пустое шоссе без машин выглядит странно.
+            _roadsVisible = !_roadsVisible;
         }
 
         if (_input.WasPressed(Keys.E))
@@ -512,6 +531,22 @@ public sealed class WorldBoxGame : Game
         };
     }
 
+    /// <summary>
+    /// Насколько быстрее едет транспорт на ускорении. Скорость мира растёт в четыре раза
+    /// за шаг, а машины — мягче: иначе на x64 они мелькают полосками и рябят в глазах.
+    /// </summary>
+    private float TrafficFactor()
+    {
+        return _clock.Speed switch
+        {
+            GameSpeed.Paused => 0f,
+            GameSpeed.X4 => 2f,
+            GameSpeed.X16 => 3f,
+            GameSpeed.X64 => 4f,
+            _ => 1f,
+        };
+    }
+
     /// <summary>Следующий сид считается из текущего, часы не участвуют: цепочка миров повторима.</summary>
     private void NewWorld()
     {
@@ -567,9 +602,21 @@ public sealed class WorldBoxGame : Game
             _borders.Draw(_batch, _primitives, _camera, _territory, _tribes, _settlements);
         }
 
+        // Дороги ложатся поверх границ: иначе полупрозрачная заливка державы гасит полотно.
+        if (_roadsVisible && _roadRenderer != null)
+        {
+            _roadRenderer.Draw(_batch, _primitives, _camera, _roads);
+        }
+
         if (_routes != null)
         {
             _tradeRenderer.Draw(_batch, _primitives, _camera, _routes, _tribes);
+        }
+
+        // Транспорт едет поверх дороги, но под домами: обоз заезжает за город, а не на него.
+        if (_roadsVisible)
+        {
+            _traffic.Draw(_batch, _primitives, _camera, _roads, _tribes, _trafficSeconds);
         }
 
         if (detail)
@@ -736,6 +783,10 @@ public sealed class WorldBoxGame : Game
         _settlementSystem = new SettlementSystem(_people, _tribes, _settlements, _territory);
         _territorySystem = new TerritorySystem(_tribes, _territory);
 
+        // Дороги живут своей жизнью: полотно остаётся на земле и после гибели города.
+        _roads = new RoadNetwork(_size, _size);
+        _roadSystem = new RoadSystem(_tribes, _settlements, _roads);
+
         // Хозяйство собирается раньше эпох: торговые ресурсы нужны самому первому переходу.
         if (_economyTable != null)
         {
@@ -767,7 +818,9 @@ public sealed class WorldBoxGame : Game
         _clock.Speed = GameSpeed.X1;
         _speedBeforePause = GameSpeed.X1;
         _simStats.Clear();
+        _trafficSeconds = 0f;
         _borders?.Invalidate();
+        _roadRenderer?.Invalidate();
     }
 
     /// <summary>
@@ -797,10 +850,15 @@ public sealed class WorldBoxGame : Game
         text.Append("жизнь: людей ").Append(info.People)
             .Append(", народов ").Append(info.Tribes)
             .Append(", поселений ").AppendLine(info.Settlements.ToString());
+        text.Append("дороги: маршрутов ").Append(_roads.Count)
+            .Append(", тайлов полотна ").Append(_roads.Tiles)
+            .Append(", транспорта в кадре ").Append(_traffic.DrawnVehicles)
+            .Append(", самолётов ").AppendLine(_traffic.DrawnPlanes.ToString());
         text.Append("слои: ближний план ").Append(OnOff(_detailTiles))
             .Append(", люди ").Append(OnOff(_peopleVisible))
             .Append(", декор ").Append(OnOff(_decorVisible))
             .Append(", границы ").Append(OnOff(_bordersVisible))
+            .Append(", дороги ").Append(OnOff(_roadsVisible))
             .Append(", торговые пути ").Append(OnOff(_tradeRenderer.Visible))
             .Append(", панель народов ").Append(OnOff(_tribePanel.Visible))
             .Append(", легенда ").AppendLine(OnOff(_legend.Visible));
@@ -841,6 +899,7 @@ public sealed class WorldBoxGame : Game
             _populationSystem,
             _settlementSystem,
             _territorySystem,
+            _roadSystem,
         };
 
         if (_economySystem != null)
@@ -874,6 +933,9 @@ public sealed class WorldBoxGame : Game
 
         _borders?.Dispose();
         _borders = new TerritoryRenderer(GraphicsDevice, _map.Width, _map.Height);
+
+        _roadRenderer?.Dispose();
+        _roadRenderer = new RoadRenderer(GraphicsDevice, _map.Width, _map.Height);
 
         _minimap?.Dispose();
         _minimap = new Minimap(GraphicsDevice, _map);
