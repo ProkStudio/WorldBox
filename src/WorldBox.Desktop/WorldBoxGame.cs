@@ -621,7 +621,7 @@ public sealed class WorldBoxGame : Game
 
         if (detail)
         {
-            _buildings.Draw(_batch, _primitives, _camera, _tribes, _settlements);
+            _buildings.Draw(_batch, _primitives, _camera, _map, _tribes, _settlements, (float)seconds);
         }
 
         if (_peopleVisible)
