@@ -328,9 +328,26 @@ public sealed class SettlementSystem : ISimulationSystem
             }
         }
 
+        // Народ без единого живого человека вымер. Его города сами не опустеют: CountLocals
+        // считает всех людей в радиусе, не разбирая народа, и мёртвое поселение вечно живёт
+        // за счёт чужого населения и держит землю. Бросаем такие поселения сами.
+        for (int i = 0; i < settlements; i++)
+        {
+            if (!Settlements.Alive[i])
+            {
+                continue;
+            }
+
+            short owner = Settlements.Tribe[i];
+            if ((uint)owner < (uint)Tribes.Capacity && Tribes.Alive[owner] && Tribes.People[owner] == 0)
+            {
+                Abandon(i);
+            }
+        }
+
         for (short tribe = 1; tribe < Tribes.Capacity; tribe++)
         {
-            if (Tribes.Alive[tribe] && Tribes.People[tribe] == 0 && Tribes.Settlements[tribe] == 0)
+            if (Tribes.Alive[tribe] && Tribes.People[tribe] == 0)
             {
                 Territory.ReleaseAll(tribe);
                 Tribes.Remove(tribe);
