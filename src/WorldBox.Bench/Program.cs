@@ -1,15 +1,16 @@
 using System.Diagnostics;
 using System.Globalization;
 using WorldBox.Core;
+using WorldBox.Core.Economy;
 using WorldBox.Core.Eras;
 using WorldBox.Core.People;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Tribes;
 using WorldBox.Core.World;
 
-// Консольный замер симуляции без окна: карта, люди, племена, поселения и эпохи.
+// Консольный замер симуляции без окна: карта, люди, племена, поселения, хозяйство и эпохи.
 // Пример: dotnet run -c Release --project src/WorldBox.Bench -- --ticks 5000 --size 512 --seed 1
-// Длинный прогон для проверки эпох: --ticks 100000
+// Длинный прогон для проверки эпох и торговых путей: --ticks 100000
 int ticks = 5000;
 int size = 512;
 int seed = 20260911;
@@ -59,24 +60,43 @@ var territory = new Territory(size, size, tribes.Capacity);
 var tech = new TribeTech(tribes.Capacity);
 
 EraTable? table = EraTable.Load(out string eraError);
+EconomyTable? economy = EconomyTable.Load(out string economyError);
 
 TribeSeeder.Seed(world, people, tribes, settlements, territory, tribeCount, Math.Max(1, startPeople / tribeCount));
 
 var populationSystem = new PopulationSystem(people, null, tech);
 var settlementSystem = new SettlementSystem(people, tribes, settlements, territory);
 
+// Хозяйство собирается раньше эпох: эпохам нужны торговые ресурсы и надбавка к развитию.
+TribeMarket? market = null;
+TradeNetwork? routes = null;
+EconomySystem? economySystem = null;
+if (economy != null)
+{
+    market = new TribeMarket(tribes.Capacity, economy.Count);
+    routes = new TradeNetwork(economy.Trade.MaxRoutes);
+    economySystem = new EconomySystem(economy, tribes, settlements, territory, market, routes);
+}
+
 EraSystem? eraSystem = null;
-SimulationLoop loop;
 if (table != null)
 {
     world.YearsPerTick = table.YearsPerTickOf(0);
-    eraSystem = new EraSystem(table, tribes, territory, tech);
-    loop = new SimulationLoop(world, populationSystem, settlementSystem, eraSystem);
+    eraSystem = new EraSystem(table, tribes, territory, tech, market);
 }
-else
+
+var systems = new List<ISimulationSystem> { populationSystem, settlementSystem };
+if (economySystem != null)
 {
-    loop = new SimulationLoop(world, populationSystem, settlementSystem);
+    systems.Add(economySystem);
 }
+
+if (eraSystem != null)
+{
+    systems.Add(eraSystem);
+}
+
+var loop = new SimulationLoop(world, systems.ToArray());
 
 // Прогрев: первые тики всегда медленнее из-за JIT.
 loop.RunTicks(Math.Min(200, ticks));
@@ -147,13 +167,83 @@ else
 }
 
 Console.WriteLine();
+
+if (economy != null && market != null && routes != null && economySystem != null)
+{
+    int seaRoutes = 0;
+    for (int i = 0; i < routes.Count; i++)
+    {
+        if (routes.Sea[i])
+        {
+            seaRoutes++;
+        }
+    }
+
+    Console.WriteLine("Хозяйство:");
+    Console.WriteLine("  торговых путей: {0} из {1}, из них морских {2}", routes.Count, routes.Capacity, seaRoutes);
+    Console.WriteLine("  перевезено за последний прогон: {0:F1}", economySystem.LastTradeVolume);
+    Console.WriteLine("  голодают народов: {0}", economySystem.HungryTribes);
+
+    short richest = (short)economySystem.Richest;
+    if (tribes.IsAlive(richest))
+    {
+        Console.WriteLine(
+            "  самый богатый: {0}, казна {1:F0}, путей {2}",
+            tribes.NameOf(richest),
+            market.Wealth[richest],
+            market.Routes[richest]);
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Товары (среднее по живым народам):");
+    for (int good = 0; good < economy.Count; good++)
+    {
+        float priceSum = 0f;
+        float stockSum = 0f;
+        int alive = 0;
+        for (short t = 1; t < tribes.Capacity; t++)
+        {
+            if (!tribes.Alive[t])
+            {
+                continue;
+            }
+
+            priceSum += market.PriceOf(t, good);
+            stockSum += market.StockOf(t, good);
+            alive++;
+        }
+
+        if (alive == 0)
+        {
+            continue;
+        }
+
+        Console.WriteLine(
+            "  {0}: цена {1:F2}, склад {2:F1}, с эпохи {3}",
+            economy.Id[good],
+            priceSum / alive,
+            stockSum / alive,
+            economy.MinEra[good]);
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Контрольная сумма рынка: {0}", market.Checksum(tribes));
+    Console.WriteLine("Контрольная сумма путей: {0}", routes.Checksum());
+}
+else
+{
+    Console.WriteLine("Таблица товаров не прочитана, хозяйство в замер не вошло: {0}", economyError);
+}
+
+Console.WriteLine();
 Console.WriteLine("Строка для docs/PERF.md:");
 Console.WriteLine(
-    "| {0:yyyy-MM-dd} | S4 | {1}x{1}, {2} народов, {3} человек на старте | {4:F4} | {5:F4} | — |",
+    "| {0:yyyy-MM-dd} | S5 | {1}x{1}, {2} народов, {3} человек, {4} путей | {5:F4} | {6:F4} | — |",
     DateTime.Now,
     size,
     tribeCount,
     startPeople,
+    routes != null ? routes.Count : 0,
     msPerTick,
     world.TickStats.Percentile(0.99));
 
@@ -162,4 +252,22 @@ Console.WriteLine("Системы (вместе с прогревом):");
 for (int i = 0; i < loop.SystemCount; i++)
 {
     Console.WriteLine("  {0}: {1:F2} мс всего, последний запуск {2:F3} мс", loop.SystemName(i), loop.SystemTotalMs(i), loop.SystemLastMs(i));
+}
+
+// Отдельная строка про бюджет хозяйства: его проверка записана в плане среза S5.
+if (economySystem != null)
+{
+    for (int i = 0; i < loop.SystemCount; i++)
+    {
+        if (!string.Equals(loop.SystemName(i), economySystem.Name, StringComparison.Ordinal))
+        {
+            continue;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine(
+            "Экономический прогон: {0:F3} мс (бюджет 2 мс на 500 поселений, сейчас {1})",
+            loop.SystemLastMs(i),
+            settlements.Count);
+    }
 }
