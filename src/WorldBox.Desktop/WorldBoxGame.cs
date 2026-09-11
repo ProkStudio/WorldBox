@@ -21,8 +21,8 @@ namespace WorldBox.Desktop;
 /// шесть режимов карты, мини-карта, легенда, ближний план спрайтами 16x16
 /// с растительностью и постройками, жители, которые едят, кочуют, рожают и умирают,
 /// племена со своими поселениями и границами, развитие народов по эпохам —
-/// от каменного века до космоса — и оболочка: нижняя панель инструментов,
-/// значки и таблички городов.
+/// от каменного века до космоса — и оболочка в едином скине: нижняя панель
+/// инструментов, значки, круглые панели и таблички городов.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
@@ -31,6 +31,9 @@ public sealed class WorldBoxGame : Game
 
     /// <summary>Сколько народов зарождается на старте.</summary>
     private const int StartTribes = 7;
+
+    /// <summary>Отступ между панелью народов и мини-картой.</summary>
+    private const int PanelGap = 12;
 
     private static readonly Color Background = new Color(9, 11, 14);
     private static readonly Color BorderColor = new Color(94, 159, 232, 150);
@@ -601,10 +604,16 @@ public sealed class WorldBoxGame : Game
         // Таблички городов идут первыми: панели должны ложиться поверх них.
         _plates.Draw(_batch, _font, _ui, _camera, _tribes, _settlements, viewportWidth, viewportHeight);
 
-        _overlay.Draw(_batch, _font, _primitives, in info, viewportWidth, viewportHeight);
-        _legend.Draw(_batch, _font, _primitives, viewportWidth);
-        _minimap?.Draw(_batch, _primitives, _camera);
-        _tribePanel.Draw(_batch, _font, _primitives, _tribes, _tech, _eraTable, viewportWidth, viewportHeight);
+        _overlay.Draw(_batch, _font, _primitives, in info, viewportWidth, viewportHeight, _ui);
+        _legend.Draw(_batch, _font, _primitives, viewportWidth, _ui);
+        _minimap?.Draw(_batch, _primitives, _camera, _ui);
+
+        // Панель народов ставится над мини-картой, иначе они перекрывают друг друга.
+        _tribePanel.BottomMargin = _minimap != null
+            ? viewportHeight - _minimap.Bounds.Y + PanelGap
+            : Toolbar.ReservedHeight + PanelGap;
+
+        _tribePanel.Draw(_batch, _font, _primitives, _tribes, _tech, _eraTable, viewportWidth, viewportHeight, _ui);
         _inspector.Draw(
             _batch,
             _font,
@@ -620,7 +629,8 @@ public sealed class WorldBoxGame : Game
             _tribes,
             _tech,
             _eraTable,
-            _settlements);
+            _settlements,
+            _ui);
 
         // Панель инструментов рисуется последней: подсказка должна быть поверх всего.
         var toolbarState = new ToolbarState(
