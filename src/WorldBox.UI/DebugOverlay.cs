@@ -11,6 +11,8 @@ namespace WorldBox.UI;
 /// Угловой оверлей с fps, временем кадра и состоянием мира.
 /// Строки собираются в переиспользуемый буфер: за кадр ноль аллокаций.
 /// Каждая строка помечена значком, чтобы глаз находил нужную без чтения.
+/// После отрисовки панель запоминает своё место в <see cref="Bounds"/>: по нему игра ставит
+/// следующие окна так, чтобы они не налезали друг на друга.
 /// </summary>
 public sealed class DebugOverlay
 {
@@ -28,6 +30,9 @@ public sealed class DebugOverlay
 
     public int Scale { get; set; } = 2;
 
+    /// <summary>Куда легла панель в последнем кадре. Пустой прямоугольник, если она скрыта.</summary>
+    public Rectangle Bounds { get; private set; }
+
     public void Draw(
         SpriteBatch batch,
         PixelFont font,
@@ -44,6 +49,10 @@ public sealed class DebugOverlay
         if (Visible)
         {
             DrawPanel(batch, font, primitives, skin, in info);
+        }
+        else
+        {
+            Bounds = Rectangle.Empty;
         }
 
         if (HintVisible)
@@ -75,6 +84,7 @@ public sealed class DebugOverlay
         }
 
         var panel = new Rectangle(14, 14, PanelWidth, (step * lines) + (11 * scale));
+        Bounds = panel;
         UiChrome.Panel(batch, primitives, skin, panel);
 
         int iconX = panel.X + (5 * scale);

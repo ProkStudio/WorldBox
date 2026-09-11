@@ -18,13 +18,13 @@ namespace WorldBox.UI;
 /// </summary>
 public sealed class MarketPanel
 {
-    /// <summary>Сколько народов помещается в панель.</summary>
-    public const int MaxRows = 8;
+    /// <summary>Сколько народов помещается в панель. Больше шести окно упирается в осмотр тайла.</summary>
+    public const int MaxRows = 6;
 
     private const int PanelWidth = 620;
     private const int IconSpace = 22;
 
-    /// <summary>Столько товара за прогон считается оживлённой торговлей.</summary>
+    /// <summary>Надбавка голодным: такая беда важнее любой казны и всегда всплывает первой строкой.</summary>
     private const float HungryBoost = 1000000f;
 
     private static readonly Color GoodsColor = new Color(214, 198, 160);
@@ -77,7 +77,7 @@ public sealed class MarketPanel
         int textLines = rows > 0 ? 2 + (rows * 2) : 2;
         int height = (step * textLines) + (11 * scale);
 
-        // Панель не должна залезть на тулбар: если народов много, нижние строки просто не рисуются.
+        // Окно не должно залезть на тулбар: если места мало, нижние строки просто не рисуются.
         int room = viewportHeight - TopMargin - Toolbar.ReservedHeight - 12;
         if (room > step * 2 && height > room)
         {
@@ -177,7 +177,7 @@ public sealed class MarketPanel
         float famine = market.Famine[tribe];
         if (famine > 0f)
         {
-            // Голод важнее всего: строка краснеет и остальные цифры уходят на второй план.
+            // Голод важнее всего: строка краснеет, остальные цифры уходят на второй план.
             _line.Append(Strings.Get("panel.hunger")).Append(' ')
                 .Append((int)MathF.Round(famine * 100f)).Append('%')
                 .Append("   ").Append(Strings.Get("panel.routes")).Append(' ').Append(market.Routes[tribe]);
@@ -193,8 +193,8 @@ public sealed class MarketPanel
             if (dearest >= 0)
             {
                 _line.Append("   ").Append(Strings.Get("panel.dearest")).Append(' ')
-                    .Append(Strings.Get(table.NameKeyOf(dearest))).Append(' ');
-                AppendFixed(_line, market.PriceOf(tribe, dearest));
+                    .Append(Strings.Get(table.NameKeyOf(dearest))).Append(' ')
+                    .Append(market.PriceOf(tribe, dearest), 1);
                 color = GoodsColor;
                 icon = IconKind.MapResources;
             }
@@ -272,18 +272,6 @@ public sealed class MarketPanel
         font.Draw(batch, Strings.Get("panel.market"), new Vector2(x, y), UiPalette.Accent, scale);
         y += step;
         font.Draw(batch, Strings.Get("panel.no_market"), new Vector2(x, y), UiPalette.TextMuted, scale);
-    }
-
-    /// <summary>Печатает число с одним знаком после запятой, не собирая строк.</summary>
-    private static void AppendFixed(TextBuilder line, float value)
-    {
-        int tenths = (int)MathF.Round(value * 10f);
-        if (tenths < 0)
-        {
-            tenths = 0;
-        }
-
-        line.Append(tenths / 10).Append(',').Append(tenths % 10);
     }
 
     /// <summary>Отбирает народов вставкой в готовый массив: голодные первыми, дальше по богатству.</summary>

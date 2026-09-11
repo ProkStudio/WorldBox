@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using WorldBox.Core;
 using WorldBox.Core.Diagnostics;
+using WorldBox.Core.Economy;
 using WorldBox.Core.Eras;
 using WorldBox.Core.People;
 using WorldBox.Core.Simulation;
@@ -21,8 +22,9 @@ namespace WorldBox.Desktop;
 /// шесть режимов карты, мини-карта, легенда, ближний план спрайтами 16x16
 /// с растительностью и постройками, жители, которые едят, кочуют, рожают и умирают,
 /// племена со своими поселениями и границами, развитие народов по эпохам —
-/// от каменного века до космоса — и оболочка в едином скине: нижняя панель
-/// инструментов, значки, круглые панели и таблички городов.
+/// от каменного века до космоса — хозяйство со складами, ценами, голодом и торговыми
+/// путями, и оболочка в едином скине: нижняя панель инструментов, значки,
+/// круглые панели и таблички городов.
 /// </summary>
 public sealed class WorldBoxGame : Game
 {
@@ -32,7 +34,7 @@ public sealed class WorldBoxGame : Game
     /// <summary>Сколько народов зарождается на старте.</summary>
     private const int StartTribes = 7;
 
-    /// <summary>Отступ между панелью народов и мини-картой.</summary>
+    /// <summary>Отступ между соседними панелями.</summary>
     private const int PanelGap = 12;
 
     private static readonly Color Background = new Color(9, 11, 14);
@@ -49,7 +51,9 @@ public sealed class WorldBoxGame : Game
     private readonly TileInspector _inspector = new TileInspector();
     private readonly BiomeLegend _legend = new BiomeLegend();
     private readonly TribePanel _tribePanel = new TribePanel();
+    private readonly MarketPanel _marketPanel = new MarketPanel();
     private readonly PeopleRenderer _peopleRenderer = new PeopleRenderer();
+    private readonly TradeRenderer _tradeRenderer = new TradeRenderer { Visible = false };
     private readonly Toolbar _toolbar = new Toolbar();
     private readonly NamePlates _plates = new NamePlates();
     private readonly int _size;
@@ -59,6 +63,12 @@ public sealed class WorldBoxGame : Game
 
     /// <summary>Почему таблица эпох не прочиталась. Пустая строка, если всё хорошо.</summary>
     private readonly string _eraError;
+
+    /// <summary>Таблица товаров из data/economy.json. Тоже читается один раз на запуск.</summary>
+    private readonly EconomyTable? _economyTable;
+
+    /// <summary>Почему таблица хозяйства не прочиталась. Пустая строка, если всё хорошо.</summary>
+    private readonly string _economyError;
 
     private WorldState _world = null!;
     private SimulationLoop _loop = null!;
@@ -71,6 +81,9 @@ public sealed class WorldBoxGame : Game
     private SettlementSystem _settlementSystem = null!;
     private TribeTech _tech = null!;
     private EraSystem? _eraSystem;
+    private TribeMarket? _market;
+    private TradeNetwork? _routes;
+    private EconomySystem? _economySystem;
     private SpriteBatch _batch = null!;
     private Primitives _primitives = null!;
     private PixelFont _font = null!;
@@ -94,9 +107,6 @@ public sealed class WorldBoxGame : Game
     private bool _bordersVisible = true;
     private bool _decorVisible = true;
 
-    /// <summary>Панель торговли ещё не собрана, но кнопка уже помнит своё состояние.</summary>
-    private bool _marketVisible;
-
     public WorldBoxGame(int seed, int worldSize)
     {
         _size = worldSize;
@@ -113,9 +123,12 @@ public sealed class WorldBoxGame : Game
         IsMouseVisible = true;
         Content.RootDirectory = "Content";
 
-        // Таблица эпох нужна раньше первого мира: по ней собирается цикл симуляции.
+        // Таблицы нужны раньше первого мира: по ним собирается цикл симуляции.
         _eraTable = EraTable.Load(out string eraError);
         _eraError = eraError;
+
+        _economyTable = EconomyTable.Load(out string economyError);
+        _economyError = economyError;
 
         GenerateWorld(seed);
     }
@@ -131,6 +144,12 @@ public sealed class WorldBoxGame : Game
         if (_eraError.Length > 0)
         {
             Console.Error.WriteLine(_eraError);
+        }
+
+        // То же с хозяйством: без таблицы товаров нет ни складов, ни торговых путей.
+        if (_economyError.Length > 0)
+        {
+            Console.Error.WriteLine(_economyError);
         }
 
         // Камера создаётся раньше подписки: событие смены размера трогает камеру.
@@ -258,7 +277,7 @@ public sealed class WorldBoxGame : Game
 
         if (_input.WasPressed(Keys.G))
         {
-            _marketVisible = !_marketVisible;
+            ToggleMarket();
         }
 
         if (_input.WasPressed(Keys.T))
@@ -422,7 +441,7 @@ public sealed class WorldBoxGame : Game
                 _tribePanel.Visible = !_tribePanel.Visible;
                 break;
             case ToolbarAction.ToggleMarket:
-                _marketVisible = !_marketVisible;
+                ToggleMarket();
                 break;
             case ToolbarAction.ToggleLegend:
                 _legend.Visible = !_legend.Visible;
@@ -442,6 +461,13 @@ public sealed class WorldBoxGame : Game
             default:
                 break;
         }
+    }
+
+    /// <summary>Окно торговли и линии путей включаются вместе: цифры без карты мало что говорят.</summary>
+    private void ToggleMarket()
+    {
+        _marketPanel.Visible = !_marketPanel.Visible;
+        _tradeRenderer.Visible = _marketPanel.Visible;
     }
 
     private void TogglePause()
@@ -504,7 +530,7 @@ public sealed class WorldBoxGame : Game
 
     /// <summary>
     /// Близко и в режиме ландшафта рисуем спрайты и поверх них растительность, иначе —
-    /// текстуры чанков. Затем границы держав, постройки и сами люди.
+    /// текстуры чанков. Затем границы держав, торговые пути, постройки и сами люди.
     /// Вблизи дальние значки поселений гаснут: их заменяют дома и замки.
     /// </summary>
     private void DrawWorld(double seconds)
@@ -528,6 +554,11 @@ public sealed class WorldBoxGame : Game
         {
             _borders.MarkersVisible = !detail;
             _borders.Draw(_batch, _primitives, _camera, _territory, _tribes, _settlements);
+        }
+
+        if (_routes != null)
+        {
+            _tradeRenderer.Draw(_batch, _primitives, _camera, _routes, _tribes);
         }
 
         if (detail)
@@ -608,6 +639,10 @@ public sealed class WorldBoxGame : Game
         _legend.Draw(_batch, _font, _primitives, viewportWidth, _ui);
         _minimap?.Draw(_batch, _primitives, _camera, _ui);
 
+        // Окно торговли встаёт ровно под статистикой, а без неё — в самый верх.
+        _marketPanel.TopMargin = _overlay.Bounds.Height > 0 ? _overlay.Bounds.Bottom + PanelGap : 14;
+        _marketPanel.Draw(_batch, _font, _primitives, _tribes, _market, _economyTable, _routes, viewportHeight, _ui);
+
         // Панель народов ставится над мини-картой, иначе они перекрывают друг друга.
         _tribePanel.BottomMargin = _minimap != null
             ? viewportHeight - _minimap.Bounds.Y + PanelGap
@@ -638,7 +673,7 @@ public sealed class WorldBoxGame : Game
             SpeedIndex(),
             _mode,
             _tribePanel.Visible,
-            _marketVisible,
+            _marketPanel.Visible,
             _legend.Visible,
             _bordersVisible,
             _inspector.Visible);
@@ -683,24 +718,59 @@ public sealed class WorldBoxGame : Game
         _populationSystem = new PopulationSystem(_people, null, _tech);
         _settlementSystem = new SettlementSystem(_people, _tribes, _settlements, _territory);
 
+        // Хозяйство собирается раньше эпох: торговые ресурсы нужны самому первому переходу.
+        if (_economyTable != null)
+        {
+            _market = new TribeMarket(_tribes.Capacity, _economyTable.Count);
+            _routes = new TradeNetwork(_economyTable.Trade.MaxRoutes);
+            _economySystem = new EconomySystem(_economyTable, _tribes, _settlements, _territory, _market, _routes);
+        }
+        else
+        {
+            _market = null;
+            _routes = null;
+            _economySystem = null;
+        }
+
         if (_eraTable != null)
         {
             // Первая эпоха задаёт длину тика сразу, иначе первые десять тиков шли бы чужим шагом.
             _world.YearsPerTick = _eraTable.YearsPerTickOf(0);
-            _eraSystem = new EraSystem(_eraTable, _tribes, _territory, _tech);
-            _loop = new SimulationLoop(_world, _populationSystem, _settlementSystem, _eraSystem);
+            _eraSystem = new EraSystem(_eraTable, _tribes, _territory, _tech, _market);
         }
         else
         {
             _eraSystem = null;
-            _loop = new SimulationLoop(_world, _populationSystem, _settlementSystem);
         }
+
+        _loop = BuildLoop();
 
         _clock.Reset();
         _clock.Speed = GameSpeed.X1;
         _speedBeforePause = GameSpeed.X1;
         _simStats.Clear();
         _borders?.Invalidate();
+    }
+
+    /// <summary>Собирает цикл из того, что удалось загрузить: без таблиц игра всё равно живая.</summary>
+    private SimulationLoop BuildLoop()
+    {
+        if (_economySystem != null && _eraSystem != null)
+        {
+            return new SimulationLoop(_world, _populationSystem, _settlementSystem, _economySystem, _eraSystem);
+        }
+
+        if (_economySystem != null)
+        {
+            return new SimulationLoop(_world, _populationSystem, _settlementSystem, _economySystem);
+        }
+
+        if (_eraSystem != null)
+        {
+            return new SimulationLoop(_world, _populationSystem, _settlementSystem, _eraSystem);
+        }
+
+        return new SimulationLoop(_world, _populationSystem, _settlementSystem);
     }
 
     private void RebuildGraphics()
@@ -740,10 +810,4 @@ public sealed class WorldBoxGame : Game
         _resizing = true;
         _graphics.PreferredBackBufferWidth = Math.Max(800, Window.ClientBounds.Width);
         _graphics.PreferredBackBufferHeight = Math.Max(450, Window.ClientBounds.Height);
-        _graphics.ApplyChanges();
-        _camera.SetViewport(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
-        _minimap?.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
-        _toolbar.Layout(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
-        _resizing = false;
-    }
-}
+        _graphics.
