@@ -5,6 +5,7 @@ using WorldBox.Core.Economy;
 using WorldBox.Core.Eras;
 using WorldBox.Core.People;
 using WorldBox.Core.Roads;
+using WorldBox.Core.Rulers;
 using WorldBox.Core.Simulation;
 using WorldBox.Core.Society;
 using WorldBox.Core.Tribes;
@@ -134,6 +135,30 @@ if (societyTable != null)
         diplomacy);
 }
 
+// Правители идут после общества: они читают форму власти и добавляют своё к стабильности.
+RulerTable? rulerTable = RulerTable.Load(out string rulerError);
+RulerStore? rulerStore = null;
+HeroStore? heroStore = null;
+DynastyState? dynasty = null;
+RulerSystem? rulerSystem = null;
+if (rulerTable != null)
+{
+    rulerStore = new RulerStore(rulerTable.MaxRulers);
+    heroStore = new HeroStore(Math.Max(8, rulerTable.Heroes.MaxHeroes));
+    dynasty = new DynastyState(tribes.Capacity);
+    rulerSystem = new RulerSystem(
+        rulerTable,
+        tribes,
+        settlements,
+        rulerStore,
+        heroStore,
+        dynasty,
+        societyTable,
+        societyState,
+        cultures,
+        tech);
+}
+
 var systems = new List<ISimulationSystem> { populationSystem, settlementSystem, territorySystem, roadSystem };
 if (economySystem != null)
 {
@@ -153,6 +178,11 @@ if (warSystem != null)
 if (societySystem != null)
 {
     systems.Add(societySystem);
+}
+
+if (rulerSystem != null)
+{
+    systems.Add(rulerSystem);
 }
 
 var loop = new SimulationLoop(world, systems.ToArray());
@@ -450,10 +480,62 @@ else
     Console.WriteLine("Таблица общества не прочитана, общество в замер не вошло: {0}", societyError);
 }
 
+if (rulerTable != null && rulerSystem != null && rulerStore != null && heroStore != null && dynasty != null)
+{
+    Console.WriteLine("Люди истории:");
+    Console.WriteLine(
+        "  престолов: {0}, живых людей двора {1} из {2}, средний возраст {3:F0} лет",
+        rulerSystem.Thrones,
+        rulerStore.Living,
+        rulerStore.Capacity,
+        rulerSystem.AverageAge);
+    Console.WriteLine(
+        "  правлений: {0}, смертей {1}, из них насильственных {2}",
+        rulerSystem.TotalReigns,
+        rulerSystem.TotalDeaths,
+        rulerSystem.TotalViolentDeaths);
+    Console.WriteLine(
+        "  наследников рождено: {0}, кризисов {1}, переворотов {2}, выборов {3}",
+        rulerSystem.TotalHeirs,
+        rulerSystem.TotalCrises,
+        rulerSystem.TotalCoups,
+        rulerSystem.TotalElections);
+    Console.WriteLine(
+        "  домов основано: {0}, самая глубокая династия {1} поколений, забыто записей {2}",
+        rulerSystem.TotalHouses,
+        rulerSystem.DeepestGeneration,
+        rulerSystem.Forgotten);
+    Console.WriteLine(
+        "  героев за партию: {0}, сейчас живо {1} из {2}",
+        rulerSystem.TotalHeroes,
+        heroStore.Count,
+        heroStore.Capacity);
+
+    short crown = tribes.Largest();
+    if (tribes.IsAlive(crown) && rulerSystem.RulerOf(crown) >= 0)
+    {
+        Console.WriteLine(
+            "  самый людный народ: {0}, правитель {1} {2}, дом {3}, поколение {4}",
+            tribes.NameOf(crown),
+            rulerSystem.RulerNameOf(crown),
+            rulerSystem.EpithetOf(crown),
+            rulerSystem.HouseOf(crown),
+            rulerSystem.GenerationOf(crown));
+    }
+
+    Console.WriteLine("  контрольная сумма правителей: {0}", rulerStore.Checksum());
+    Console.WriteLine("  контрольная сумма династий: {0}", dynasty.Checksum());
+    Console.WriteLine("  контрольная сумма героев: {0}", heroStore.Checksum());
+}
+else
+{
+    Console.WriteLine("Таблица правителей не прочитана, правители в замер не вошли: {0}", rulerError);
+}
+
 Console.WriteLine();
 Console.WriteLine("Строка для docs/PERF.md:");
 Console.WriteLine(
-    "| {0:yyyy-MM-dd} | S7 | {1}x{1}, {2} народов, {3} человек, {4} путей | {5:F4} | {6:F4} | — |",
+    "| {0:yyyy-MM-dd} | S8 | {1}x{1}, {2} народов, {3} человек, {4} путей | {5:F4} | {6:F4} | — |",
     DateTime.Now,
     size,
     tribeCount,

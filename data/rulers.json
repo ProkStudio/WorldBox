@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "maxRulers": 768,
+  "life": {
+    "minLifeYears": 55,
+    "maxLifeYears": 95,
+    "adultYears": 16,
+    "violentDeathChance": 0.04,
+    "unrestDeathWeight": 0.25
+  },
+  "heirs": {
+    "heirChancePerRun": 0.8,
+    "maxChildren": 4,
+    "coupChance": 0.16,
+    "crisisUnrest": 0.22,
+    "crisisRuns": 3
+  },
+  "traits": {
+    "minTraits": 1,
+    "maxTraits": 3,
+    "cruelUnrest": 0.03,
+    "justUnrest": 0.025,
+    "builderFood": 2.5,
+    "scholarProgress": 1.5,
+    "conquerorAggression": 0.15,
+    "piousStability": 0.06,
+    "cruelStability": 0.05
+  },
+  "heroes": {
+    "maxHeroes": 24,
+    "chancePerRun": 0.1,
+    "lifeRuns": 2,
+    "commanderAggression": 0.1,
+    "inventorProgress": 2.0,
+    "prophetUnrest": 0.03,
+    "explorerFood": 2.0
+  }
+}

@@ -10,6 +10,7 @@ using WorldBox.Core.Eras;
 using WorldBox.Core.People;
 using WorldBox.Core.Roads;
 using WorldBox.Core.Simulation;
+using WorldBox.Core.Rulers;
 using WorldBox.Core.Society;
 using WorldBox.Core.Time;
 using WorldBox.Core.Tribes;
@@ -58,6 +59,8 @@ public sealed class WorldBoxGame : Game
     private readonly MarketPanel _marketPanel = new MarketPanel();
     private readonly WarPanel _warPanel = new WarPanel();
     private readonly SocietyPanel _societyPanel = new SocietyPanel();
+
+    private readonly DynastyPanel _dynastyPanel = new DynastyPanel();
     private readonly PeopleRenderer _peopleRenderer = new PeopleRenderer();
     private readonly TradeRenderer _tradeRenderer = new TradeRenderer { Visible = false };
     private readonly ArmyRenderer _armyRenderer = new ArmyRenderer();
@@ -90,6 +93,11 @@ public sealed class WorldBoxGame : Game
     /// <summary>Почему таблица общества не прочиталась. Пустая строка, если всё хорошо.</summary>
     private readonly string _societyError;
 
+    private readonly RulerTable? _rulerTable;
+
+    /// <summary>Почему не прочитались правители: пустая строка значит, что всё в порядке.</summary>
+    private readonly string _rulerError;
+
     private WorldState _world = null!;
     private SimulationLoop _loop = null!;
     private WorldMap _map = null!;
@@ -114,6 +122,14 @@ public sealed class WorldBoxGame : Game
     private ReligionStore? _religions;
     private CultureStore? _cultures;
     private SocietySystem? _society;
+
+    private RulerStore? _rulerStore;
+
+    private HeroStore? _heroStore;
+
+    private DynastyState? _dynasty;
+
+    private RulerSystem? _rulerSystem;
     private SpriteBatch _batch = null!;
     private Primitives _primitives = null!;
     private PixelFont _font = null!;
@@ -176,6 +192,9 @@ public sealed class WorldBoxGame : Game
         _societyTable = SocietyTable.Load(out string societyError);
         _societyError = societyError;
 
+        _rulerTable = RulerTable.Load(out string rulerError);
+        _rulerError = rulerError;
+
         GenerateWorld(seed);
     }
 
@@ -208,6 +227,11 @@ public sealed class WorldBoxGame : Game
         if (_societyError.Length > 0)
         {
             Console.Error.WriteLine(_societyError);
+        }
+
+        if (_rulerError.Length > 0)
+        {
+            Console.Error.WriteLine(_rulerError);
         }
 
         // Камера создаётся раньше подписки: событие смены размера трогает камеру.
@@ -380,6 +404,12 @@ public sealed class WorldBoxGame : Game
         {
             // Окно общества: во что верит двор, какой народ главный и крепка ли власть.
             _societyPanel.Visible = !_societyPanel.Visible;
+        }
+
+        // Окно династии висит на H: D занята камерой, а C уже открывает общество.
+        if (_input.WasPressed(Keys.H))
+        {
+            _dynastyPanel.Visible = !_dynastyPanel.Visible;
         }
 
         if (_input.WasPressed(Keys.T))
@@ -830,6 +860,20 @@ public sealed class WorldBoxGame : Game
             viewportHeight,
             _ui);
 
+        // Окно династии продолжает ту же цепочку и встаёт под окном общества.
+        _dynastyPanel.TopMargin = _societyPanel.Bounds.Height > 0
+            ? _societyPanel.Bounds.Bottom + PanelGap
+            : _societyPanel.TopMargin;
+        _dynastyPanel.Draw(
+            _batch,
+            _font,
+            _primitives,
+            _tribes,
+            _rulerSystem,
+            _rulerStore,
+            viewportHeight,
+            _ui);
+
         // Панель народов ставится над мини-картой, иначе они перекрывают друг друга.
         _tribePanel.BottomMargin = _minimap != null
             ? viewportHeight - _minimap.Bounds.Y + PanelGap
@@ -985,6 +1029,32 @@ public sealed class WorldBoxGame : Game
             _society = null;
         }
 
+        // Люди истории приходят последними: им нужны и народы, и города, и общество.
+        if (_rulerTable != null)
+        {
+            _rulerStore = new RulerStore(_rulerTable.MaxRulers);
+            _heroStore = new HeroStore(Math.Max(8, _rulerTable.Heroes.MaxHeroes));
+            _dynasty = new DynastyState(_tribes.Capacity);
+            _rulerSystem = new RulerSystem(
+                _rulerTable,
+                _tribes,
+                _settlements,
+                _rulerStore,
+                _heroStore,
+                _dynasty,
+                _societyTable,
+                _societyState,
+                _cultures,
+                _tech);
+        }
+        else
+        {
+            _rulerStore = null;
+            _heroStore = null;
+            _dynasty = null;
+            _rulerSystem = null;
+        }
+
         _loop = BuildLoop();
 
         _clock.Reset();
@@ -1040,7 +1110,17 @@ public sealed class WorldBoxGame : Game
             .Append(", обращений всего ").Append(_society != null ? _society.TotalConversions : 0)
             .Append(", смут ").Append(_society != null ? _society.TotalCollapses : 0)
             .Append(", стабильность ")
-            .AppendLine(((int)MathF.Round((_society != null ? _society.AverageStability : 0f) * 100f)).ToString());
+            .AppendLine(((int)MathF.Round((_society != null ? _society.AverageStability : 0f) * 100f)).ToString())
+            .Append("династии: престолов ")
+            .Append(_rulerSystem != null ? _rulerSystem.Thrones : 0)
+            .Append(", правлений ")
+            .Append(_rulerSystem != null ? _rulerSystem.TotalReigns : 0L)
+            .Append(", кризисов ")
+            .Append(_rulerSystem != null ? _rulerSystem.TotalCrises : 0L)
+            .Append(", переворотов ")
+            .Append(_rulerSystem != null ? _rulerSystem.TotalCoups : 0L)
+            .Append(", героев ")
+            .AppendLine((_rulerSystem != null ? _rulerSystem.HeroCount : 0).ToString());
         text.Append("слои: ближний план ").Append(OnOff(_detailTiles))
             .Append(", люди ").Append(OnOff(_peopleVisible))
             .Append(", декор ").Append(OnOff(_decorVisible))
@@ -1097,7 +1177,7 @@ public sealed class WorldBoxGame : Game
     /// </summary>
     private SimulationLoop BuildLoop()
     {
-        var systems = new List<ISimulationSystem>(9)
+        var systems = new List<ISimulationSystem>(10)
         {
             _populationSystem,
             _settlementSystem,
@@ -1125,6 +1205,12 @@ public sealed class WorldBoxGame : Game
         if (_society != null)
         {
             systems.Add(_society);
+        }
+
+        // Правители идут после общества: они правят настроением, которое общество уже посчитало.
+        if (_rulerSystem != null)
+        {
+            systems.Add(_rulerSystem);
         }
 
         return new SimulationLoop(_world, systems.ToArray());

@@ -208,5 +208,41 @@
   "dogma.war": "Война",
   "dogma.trade": "Торговля",
   "dogma.knowledge": "Знание",
-  "dogma.order": "Порядок"
+  "dogma.order": "Порядок",
+
+  "panel.dynasty": "Династия",
+  "panel.ruler": "Правитель",
+  "panel.no_ruler": "престол пуст",
+  "panel.house": "дом",
+  "panel.generation": "поколение",
+  "panel.age": "лет",
+  "panel.heir": "наследник",
+  "panel.traits": "черты",
+  "panel.crises": "кризисы",
+  "panel.coups": "перевороты",
+  "panel.elections": "выборы",
+  "panel.reigns": "правлений",
+  "panel.deaths": "смертей",
+  "panel.heirs": "наследников",
+  "panel.depth": "глубина рода",
+  "panel.heroes": "герои",
+  "panel.lineage": "Род",
+  "panel.ruler_history": "История",
+  "panel.no_dynasty": "Правителей пока нет",
+  "panel.no_rulers_table": "Нет data/rulers.json",
+
+  "hud.rulers": "престолов",
+  "hud.heroes": "героев",
+
+  "trait.cruel": "жестокий",
+  "trait.just": "справедливый",
+  "trait.scholar": "учёный",
+  "trait.builder": "строитель",
+  "trait.conqueror": "завоеватель",
+  "trait.pious": "набожный",
+
+  "hero.commander": "Полководец",
+  "hero.inventor": "Изобретатель",
+  "hero.prophet": "Пророк",
+  "hero.explorer": "Исследователь"
 }
